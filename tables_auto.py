@@ -1,11 +1,9 @@
 # importing package
+from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-import requests, json
-from pprint import pprint
+import requests
 import pandas as pd
-from datetime import datetime
-from matplotlib.offsetbox import OffsetImage,AnnotationBbox
 
 pd.set_option('display.max_columns', None)
 
@@ -14,7 +12,7 @@ base_url = 'https://fantasy.premierleague.com/api/'
 
 
 # get data from fixtures endpoint
-fix = requests.get(base_url+'fixtures/').json()
+fix = requests.get(base_url+'fixtures/', timeout=10).json()
 
 
 # create fixtures dataframe
@@ -22,7 +20,7 @@ fixtures = pd.json_normalize(fix)
 
 
 # get data from bootstrap-static endpoint
-r = requests.get(base_url+'bootstrap-static/').json()
+r = requests.get(base_url+'bootstrap-static/', timeout=10).json()
 
 
 # create teams dataframe
@@ -106,8 +104,9 @@ def get_team_record(team_id):
     
     remaining_df = df2[ ((df2['finished'] == False) & (df2['finished_provisional'] == False)) & ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
     remaining_df = remaining_df.reset_index()
+
+    # when testing smaller, - amount of removed fixtures here
     left = int(len(remaining_df))
-    
     
     pts = int((w*3)+(d))
     ply = int(w+d+l)
@@ -168,216 +167,210 @@ def get_remaining_fixtures(team_id):
     return filtered_df
 
 
-# add max points row, goal difference, and goals scored to dataframe (for H2H tiebreakers)
-max_points = []
-gd = []
-gf = []
-for team in teams.itertuples():
-    points, played, remaining, max, goal_difference, goals_for = get_team_record(team.id)
-    max_points.append(max)
-    gd.append(int(goal_difference))
-    gf.append(goals_for)
-
-teams['max_points'] = max_points
-teams['goal_difference'] = gd
-teams['goals_for'] = gf
-teams = teams.sort_values(by=['max_points', 'goal_difference', 'goals_for'], ascending=[False, False, False])
+def generate_table(pos_one, pos_two):
+    # use the global teams variable
+    global teams
 
 
-# make dataframe with all teams in, in order to remove extraneous teams from main dataset
-teams_all = teams.copy()
+    # add max points row, goal difference, and goals scored to dataframe (for H2H tiebreakers)
+    max_points = []
+    gd = []
+    gf = []
+    for team in teams.itertuples():
+        points, played, remaining, max, goal_difference, goals_for = get_team_record(team.id)
+        max_points.append(max)
+        gd.append(int(goal_difference))
+        gf.append(goals_for)
 
-remove_from_top = 0
-remove_from_bottom = 11
+    teams['max_points'] = max_points
+    teams['goal_difference'] = gd
+    teams['goals_for'] = gf
+    teams = teams.sort_values(by=['max_points', 'goal_difference', 'goals_for'], ascending=[False, False, False])
 
-teams.drop(teams.tail(remove_from_bottom).index, inplace=True)
-teams.drop(teams.head(remove_from_top).index, inplace=True)
+
+    # make dataframe with all teams in, in order to remove extraneous teams from main dataset
+    teams_all = teams.copy()
 
 
-# create the canvas and general constants
-starting_x = 18
-step_x = 0.8869
-default_x = 20
+    # convert table position to usable numbers
+    remove_from_top = pos_one - 1
+    remove_from_bottom = 20 - pos_two
 
-x_offset = {
-    20: 0.0150,
-    19: 0.0160,
-    18: 0.0175,
-    17: 0.0185,
-    16: 0.0200,
-    15: 0.0210,
-    14: 0.0225,
-    13: 0.0240,
-    12: 0.0260,
-    11: 0.0280,
-    10: 0.0305,
-    9: 0.0330,
-    8: 0.0395,
-    7: 0.0440,
-    6: 0.0550,
-    5: 0.0660,
-    4: 0.0825,
-    3: 0.1130,
-    2: 0.1750 }
+    teams.drop(teams.tail(remove_from_bottom).index, inplace=True)
+    teams.drop(teams.head(remove_from_top).index, inplace=True)
 
-starting_y = 26
-step_y = 0.2601
-default_y = 100
 
-barwidth = 0.7
-theory_min = 114
-plt.figure(figsize=(starting_x, starting_y))
+    # create the canvas and general constants
+    starting_x = 18
+    step_x = 0.8869
+    default_x = 20
 
-# Fixture Difficulty Colours
-colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272'}
+    x_offset = {
+        20: 0.0150,
+        19: 0.0160,
+        18: 0.0175,
+        17: 0.0185,
+        16: 0.0200,
+        15: 0.0210,
+        14: 0.0225,
+        13: 0.0240,
+        12: 0.0260,
+        11: 0.0280,
+        10: 0.0305,
+        9: 0.0330,
+        8: 0.0395,
+        7: 0.0440,
+        6: 0.0550,
+        5: 0.0660,
+        4: 0.0825,
+        3: 0.1130,
+        2: 0.1750 }
 
-# create dictionary of team crests
-team_crest = {}
-for row in teams_all.itertuples():
-    crest_name = f"Logos/{row.id}.png"
-    crest_load = plt.imread(crest_name)
-    team_crest[row.id] = crest_load
+    starting_y = 26
+    step_y = 0.2601
+    default_y = 100
 
-# loop for every team that needs a bar
-for row in teams.itertuples():
-    points, played, remaining, max, goal_difference, goals_for = get_team_record(row.id)
-    goal_difference = f'GD {goal_difference}'
+    barwidth = 0.7
+    theory_min = 114
+    plt.figure(figsize=(starting_x, starting_y))
 
-    # remaining -= 10 # if testing smaller image size
+    # Fixture Difficulty Colours
+    colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272'}
 
-    # update lowest theoretical points total if new teams is lower
-    if theory_min > points:
-        theory_min = points
+    # create dictionary of team crests
+    team_crest = {}
+    for row in teams_all.itertuples():
+        crest_name = f"Logos/{row.id}.png"
+        crest_load = plt.imread(crest_name)
+        team_crest[row.id] = crest_load
 
-    # create bar for current points, with team colour
-    cpts = plt.bar(row.name, points, color=row.colours, edgecolor=row.colours, width=barwidth)
-    bot = points
+    # loop for every team that needs a bar
+    for row in teams.itertuples():
+        points, played, remaining, max, goal_difference, goals_for = get_team_record(row.id)
+        goal_difference = f'GD {goal_difference}'
 
-    # loop for every remaining fixture for current team: row['id]
-    fixtures_remaining = get_remaining_fixtures(row.id)
-    for fx in fixtures_remaining.itertuples():
+        # update lowest theoretical points total if new teams is lower
+        if theory_min > points:
+            theory_min = points
 
-        dif_col = colours[fx.opposition_difficulty]
-        cur_bar = plt.bar(row.name, 3, bottom=bot, color=dif_col, edgecolor="#808080", lw=1.5, width=barwidth)
-        perma_y = points
+        # create bar for current points, with team colour
+        cpts = plt.bar(row.name, points, color=row.colours, edgecolor=row.colours, width=barwidth)
+        bot = points
 
-        # positioning of image and text in upcoming fixture bar
-        for bar_im in cur_bar:
-            x,y = bar_im.get_xy()
-            w, h = bar_im.get_width(), bar_im.get_height()
+        # loop for every remaining fixture for current team: row['id]
+        fixtures_remaining = get_remaining_fixtures(row.id)
+        for fx in fixtures_remaining.itertuples():
 
-            xleft = x + w/8.5
-            xright = x + w/1.121212
-            ybot = y + h/3.5
-            ytop = y + h/1.09
+            dif_col = colours[fx.opposition_difficulty]
+            cur_bar = plt.bar(row.name, 3, bottom=bot, color=dif_col, edgecolor="#808080", lw=1.5, width=barwidth)
+            perma_y = points
 
-            xwid = xright - xleft
-            ywid = ytop - ybot
-            #print(xwid, ywid)
+            # positioning of image and text in upcoming fixture bar
+            for bar_im in cur_bar:
+                x,y = bar_im.get_xy()
+                w, h = bar_im.get_width(), bar_im.get_height()
 
-            axes1 = plt.gca()
-            xmin, xmax = axes1.get_xlim()
-            xtot = xmax - xmin
+                xleft = x + w/8.5
+                xright = x + w/1.121212
+                ybot = y + h/3.5
+                ytop = y + h/1.09
 
-            ymin, ymax = axes1.get_ylim()
-            ytot = ymax - ymin
-
-            #print(xwid*9/(xtot), ywid*15/(ytot))
-
-            # plot the team logo and the fixture date
-            imdis =  team_crest[fx.opposition_id]
-            plt.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
+                # plot the team logo and the fixture date
+                imdis =  team_crest[fx.opposition_id]
+                plt.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
+                
+                plt.text(x+w/2, y+0.18, fx.remaining_fixtures, ha='center', fontname='sans-serif', c="#757171", weight='semibold', size='x-small')
             
-            plt.text(x+w/2, y+0.18, fx.remaining_fixtures, ha='center', fontname='sans-serif', c="#757171", weight='semibold', size='x-small')
-        
-        # goal difference label
-        plt.text(x+w/2, perma_y-0.5, goal_difference, ha='center', fontname='sans-serif', c='white', weight='semibold', size='x-small')
+            # goal difference label
+            plt.text(x+w/2, perma_y-0.5, goal_difference, ha='center', fontname='sans-serif', c='white', weight='semibold', size='x-small')
 
-        # increment counter by 3, as each fixture has a possible value of 3 points
-        bot += 3
+            # increment counter by 3, as each fixture has a possible value of 3 points
+            bot += 3
 
-    # remove bottom box outline
-    for bar_a in cpts:
-        x,y = bar_a.get_xy()
-        w, h = bar_a.get_width(), bar_a.get_height()
-        #print(x,y,w,h)
-        plt.bar(x+w/2, color=bar_a.get_facecolor(), lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
+        # remove bottom box outline
+        for bar_a in cpts:
+            x,y = bar_a.get_xy()
+            w, h = bar_a.get_width(), bar_a.get_height()
+            #print(x,y,w,h)
+            plt.bar(x+w/2, color=bar_a.get_facecolor(), lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
 
-# axis is slightly shorter than the number of teams being plotted
-ax_width = len(teams.index) - 0.5
+    # axis is slightly shorter than the number of teams being plotted
+    ax_width = len(teams.index) - 0.5
 
-# get the max and min points, then add padding to graph to improve readability
-theory_max = teams['max_points'].max()
-total_y = int((theory_max + 2) - (theory_min-3))
-plt.ylim((theory_min-3), (theory_max + 2))
-plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
+    # get the max and min points, then add padding to graph to improve readability
+    theory_max = teams['max_points'].max()
+    total_y = int((theory_max + 2) - (theory_min-3))
+    plt.ylim((theory_min-3), (theory_max + 2))
+    plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
 
-# correct the plot size
-new_x = starting_x - (step_x * (default_x - len(teams.index)))
-new_y = starting_y - (step_y * (default_y - total_y))
+    # correct the plot size
+    new_x = starting_x - (step_x * (default_x - len(teams.index)))
+    new_y = starting_y - (step_y * (default_y - total_y))
 
-plt.gcf().set_size_inches(new_x, new_y)
+    plt.gcf().set_size_inches(new_x, new_y)
 
 
-# choose correct x offset from x_offset dict
-main_offset = x_offset[len(teams.index)]
-plt.margins(x=main_offset, tight=None)
+    # choose correct x offset from x_offset dict
+    main_offset = x_offset[len(teams.index)]
+    plt.margins(x=main_offset, tight=None)
 
 
-# format position numbers
-title_pos = [remove_from_top+1, 20 - remove_from_bottom]
-for x in range(len(title_pos)):
-    if title_pos[x] == 1:
-        title_pos[x] = '1st'
-    elif title_pos[x] == 2:
-        title_pos[x] = '2nd'
-    elif title_pos[x] == 3:
-        title_pos[x] = '3rd'
+    # format position numbers
+    title_pos = [remove_from_top+1, 20 - remove_from_bottom]
+    for x in range(len(title_pos)):
+        if title_pos[x] == 1:
+            title_pos[x] = '1st'
+        elif title_pos[x] == 2:
+            title_pos[x] = '2nd'
+        elif title_pos[x] == 3:
+            title_pos[x] = '3rd'
+        else:
+            title_pos[x] = f'{title_pos[x]}th'
+
+
+    # set axis lables and title
+    cur_day = datetime.today().strftime('%d-%m-%y')
+    plt.title(f"EPL: The race for European Competitions \n{title_pos[0]} to {title_pos[1]} as of {cur_day}", size=17, fontname='sans-serif', weight='semibold')
+    plt.xlabel("Teams in order of highest possible points total", labelpad=15, size=17, fontname='sans-serif', weight='semibold')
+    plt.ylabel("Points and remaining fixures in chronological order", labelpad=30, size=17, fontname='sans-serif', weight='semibold')
+    plt.xticks(rotation=60)
+
+
+    # add lines denoting UCL, UEL and CONF qualification: CONF #00be14
+    teams_all = teams_all.reset_index()
+    ucl_required = teams_all['max_points'][4]
+    plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
+    plt.text(ax_width, ucl_required+0.25, f"Above {ucl_required} points guarantees UCL", color='#00004b', ha='right', weight='semibold', size='medium')
+
+    # offset the line and label if overlapping UCL and UEL
+    uel_required = teams_all['max_points'][5]
+    if uel_required == ucl_required:
+        stylo_uel = (5, (5,5))
+        offset = -0.25
+        alig = 'top'
     else:
-        title_pos[x] = f'{title_pos[x]}th'
+        stylo_uel = (0, (5,5))
+        offset = 0.25
+        alig = 'baseline'
+
+    plt.axhline(y=uel_required, color='#ff6900', linestyle=stylo_uel)
+    plt.text(ax_width, uel_required+offset, f"Above {uel_required} points guarantees UEL", color='#ff6900', ha='right', weight='semibold', size='medium', va=alig) #va='top', 
 
 
-# set axis lables and title
-cur_day = datetime.today().strftime('%d-%m-%y')
-plt.title(f"EPL: The race for European Competitions \n{title_pos[0]} to {title_pos[1]} as of {cur_day}", size=17, fontname='sans-serif', weight='semibold')
-plt.xlabel("Teams in order of highest possible points total", labelpad=15, size=17, fontname='sans-serif', weight='semibold')
-plt.ylabel("Points and remaining fixures in chronological order", labelpad=30, size=17, fontname='sans-serif', weight='semibold')
-plt.xticks(rotation=60)
+    # Axis modifications
+    axes = plt.gca() #Getting the current axis
+    axes.spines['top'].set_visible(False)
+    axes.spines['right'].set_visible(False)
 
+    axes.spines['bottom'].set_bounds(-1, ax_width)
+    axes.spines['bottom'].set_linewidth(2)
+    axes.spines['left'].set_linewidth(2)
 
-# add lines denoting UCL, UEL and CONF qualification: CONF #00be14
-teams_all = teams_all.reset_index()
-ucl_required = teams_all['max_points'][4]
-plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
-plt.text(ax_width, ucl_required+0.25, f"Above {ucl_required} points guarantees UCL", color='#00004b', ha='right', weight='semibold', size='medium')
+    date_time = datetime.today().strftime('%d-%m-%y %H.%M')
+    title_name = f'History/PL Europe Race {date_time}.png'
+    plt.savefig(title_name, bbox_inches='tight', pad_inches=0.5, dpi=300)
+    plt.show()
 
-# offset the line and label if overlapping UCL and UEL
-uel_required = teams_all['max_points'][5]
-if uel_required == ucl_required:
-    stylo_uel = (5, (5,5))
-    offset = -0.25
-    alig = 'top'
-else:
-    stylo_uel = (0, (5,5))
-    offset = 0.25
-    alig = 'baseline'
-
-plt.axhline(y=uel_required, color='#ff6900', linestyle=stylo_uel)
-plt.text(ax_width, uel_required+offset, f"Above {uel_required} points guarantees UEL", color='#ff6900', ha='right', weight='semibold', size='medium', va=alig) #va='top', 
-
-
-# Axis modifications
-axes = plt.gca() #Getting the current axis
-axes.spines['top'].set_visible(False)
-axes.spines['right'].set_visible(False)
-
-axes.spines['bottom'].set_bounds(-1, ax_width)
-axes.spines['bottom'].set_linewidth(2)
-axes.spines['left'].set_linewidth(2)
-
-date_time = datetime.today().strftime('%d-%m-%y %H.%M')
-title_name = f'History/PL Europe Race {date_time}.png'
-plt.savefig(title_name, bbox_inches='tight', pad_inches=0.5, dpi=300)
-plt.show()
+generate_table(1, 9)
 
 
