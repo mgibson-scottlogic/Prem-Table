@@ -13,20 +13,16 @@ pd.set_option('display.max_columns', None)
 def generate_data():
     """A function to generate the 'teams' and 'df2' dataframes"""
     # base url for all FPL API endpoints
-    BASE_URL = 'https://fantasy.premierleague.com/api/'
-
+    base_url = 'https://fantasy.premierleague.com/api/'
 
     # get data from fixtures endpoint
-    fix = requests.get(BASE_URL+'fixtures/', timeout=10).json()
-
+    fix = requests.get(base_url+'fixtures/', timeout=10).json()
 
     # create fixtures dataframe
     fixtures = pd.json_normalize(fix)
 
-
     # get data from bootstrap-static endpoint
-    r = requests.get(BASE_URL+'bootstrap-static/', timeout=10).json()
-
+    r = requests.get(base_url+'bootstrap-static/', timeout=10).json()
 
     # create teams dataframe
     teams = pd.json_normalize(r['teams'])
@@ -37,7 +33,6 @@ def generate_data():
                     '#13428d', '#b30011', '#b1d4fa', '#dc1116', '#0d0805',
                     '#f4031c', '#d20911', '#152055', '#7d2d3f', '#feb906']
     teams['colours'] = team_colours
-
 
     # join fixtures to teams
     df = pd.merge(
@@ -369,26 +364,52 @@ def generate_table(pos_one=1, pos_two=20):
 
 
     # add lines denoting UCL, UEL and CONF qualification: CONF #00be14
+    ucl_pos = 4
+    uel_pos = 5
+    # con_pos = 6
+
     teams_all = teams_all.reset_index()
-    ucl_required = teams_all['max_points'][4]
-    plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
-    plt.text(ax_width, ucl_required+0.25, f"Above {ucl_required} points guarantees UCL",
-             color='#00004b', ha='center', weight='semibold', size='medium')
+    ucl_required = teams_all['max_points'][ucl_pos]
+    uel_required = teams_all['max_points'][uel_pos]
+    # con_required = teams_all['max_points'][con_pos]
+
+
+    def label_space(comp_req):
+        """A function to calculate the positioning of a label on a competition bar"""
+        # adjust text spacing to not overlap any data bars
+        for x in teams_all.itertuples():
+            if x.max_points == comp_req:
+                label_space = x.Index - 0.5
+                break
+
+        return label_space
 
     # offset the line and label if overlapping UCL and UEL
-    uel_required = teams_all['max_points'][5]
     if uel_required == ucl_required:
-        stylo_uel = (5, (5,5))
-        offset = -0.25
-        alig = 'top'
+        ucl_offset = 1.05
+        style_uel = (5, (5,5))
+        uel_offset = 0.15
+        alig = 'bottom'
     else:
-        stylo_uel = (0, (5,5))
-        offset = 0.25
+        ucl_offset = 0.15
+        style_uel = (0, (5,5))
+        uel_offset = 0.15
         alig = 'baseline'
 
-    plt.axhline(y=uel_required, color='#ff6900', linestyle=stylo_uel)
-    plt.text(ax_width, uel_required+offset, f"Above {uel_required} points guarantees UEL",
-             color='#ff6900', ha='center', weight='semibold', size='medium', va=alig) #va='top',
+    plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
+    ucl_labelpos = label_space(ucl_required)
+    plt.text(ucl_labelpos, ucl_required+ucl_offset, f"Above {ucl_required} points guarantees UCL",
+             color='#00004b', ha='left', weight='semibold', size='medium')
+
+    plt.axhline(y=uel_required, color='#ff6900', linestyle=style_uel)
+    uel_labelpos = label_space(uel_required)
+    plt.text(uel_labelpos, uel_required+uel_offset, f"Above {uel_required} points guarantees UEL",
+             color='#ff6900', ha='left', weight='semibold', size='medium', va=alig) #va='top',
+
+    # plt.axhline(y=con_required, color='#00be14', linestyle=(0, (5, 5)))
+    # con_labelpos = label_space(con_required)
+    # plt.text(con_labelpos, con_required+0.15, f"Above {con_required} points guarantees CON",
+             # color='#00be14', ha='left', weight='semibold', size='medium', va=alig) #va='top',
 
 
     # Axis modifications
