@@ -108,8 +108,8 @@ def get_team_record(team_id, df2):
         gd = str(gd)
 
     # fixture is in the future if it has not: Finished, Provisionally Finished, or Started
-    remaining_df = df2[ ((df2['finished'] == False) & (df2['finished_provisional'] == False) & (df2['started'] == False)) &
-                        ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
+    remaining_df = df2.loc[ ((~df2['finished'])&(~df2['finished_provisional'])&(~df2['started'])) &
+                       ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
     remaining_df = remaining_df.reset_index()
 
     pts = int((w*3)+(d))
@@ -119,14 +119,15 @@ def get_team_record(team_id, df2):
     max_theory = int(pts + 3*left)
 
     # ply = int(w+d+l)
-    # print(f"{team_name} Record: Played: {ply}, Won: {w}, Draw: {d}, Loss: {l}, Points: {pts}, Goal Difference: {gd}, Remaining: {left}")
+    # print(f"{team_name} Record: Played: {ply}, Won: {w}, Draw: {d}, Loss: {l},"
+    #       f"Points: {pts}, Goal Difference: {gd}, Remaining: {left}")
 
     return pts, max_theory, gd, gf
 
 
 def get_remaining_fixtures(team_id, df2):
     """Takes a team ID and returns a pandas dataframe of remaining fixtures."""
-    filtered_df = df2[ ((df2['finished'] == False) & (df2['finished_provisional'] == False) & (df2['started'] == False)) &
+    filtered_df = df2.loc[ ((~df2['finished'])&(~df2['finished_provisional'])&(~df2['started'])) &
                        ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
     filtered_df = filtered_df.reset_index()
     #filtered_df[['name_y','team_h_score', 'team_a_score', 'name_x']]
@@ -166,7 +167,8 @@ def get_remaining_fixtures(team_id, df2):
     filtered_df['opposition_name'] = opp_name
     filtered_df['opposition_difficulty'] = diff
 
-    filtered_df = filtered_df[['remaining_fixtures', 'fixture_location', 'opposition_id', 'opposition_name', 'opposition_difficulty']]
+    filtered_df = filtered_df[['remaining_fixtures', 'fixture_location',
+                               'opposition_id', 'opposition_name', 'opposition_difficulty']]
 
     # testing for smaller image size, need to -10 to remaining as well
     # filtered_df.drop(filtered_df.tail(10).index, inplace=True)
@@ -318,10 +320,17 @@ def generate_table(pos_one=1, pos_two=20):
     ax_width = len(teams.index) - 0.5
 
     # get the max and min points, then add padding to graph to improve readability
+    # if y height under 30, set height to 30 for better visual
     theory_max = teams['max_points'].max()
     total_y = int((theory_max + 2) - (theory_min-3))
-    plt.ylim((theory_min-3), (theory_max + 2))
-    plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
+
+    if total_y < 32:
+        total_y = 32
+        plt.ylim((theory_max - 30), (theory_max + 2))
+        plt.yticks(np.arange((theory_max - 29), (theory_max + 2), 1))
+    else:
+        plt.ylim((theory_min-3), (theory_max + 2))
+        plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
 
     # correct the plot size
     new_x = starting_x - (step_x * (default_x - len(teams.index)))
@@ -351,15 +360,26 @@ def generate_table(pos_one=1, pos_two=20):
     # set axis lables and title
     cur_day = datetime.today().strftime('%d-%m-%y')
     title_text = (
-        f'EPL: The race for European Competitions'
-        f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}'
+        f'EPL: The race for European Competitions   '
+        f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}   '
         )
 
-    plt.title(title_text, size=17, fontname='sans-serif', weight='semibold')
-    plt.xlabel("Teams in order of highest possible points total",
-               labelpad=15, size=17, fontname='sans-serif', weight='semibold')
+    # adjust label size when image gets smaller
+    x_labelsize = 17
+    y_labelsize = 17
+
+    if total_y < 40:
+        y_labelsize = 15
+
+    if len(teams.index) < 10:
+        x_labelsize = 15
+
+    plt.title(title_text, size=16, fontname='sans-serif', weight='semibold')
+
+    plt.xlabel("Teams in order of highest possible points total   ",
+            labelpad=15, size=x_labelsize, fontname='sans-serif', weight='semibold', loc='center')
     plt.ylabel("Points and remaining fixures in chronological order",
-                labelpad=30, size=17, fontname='sans-serif', weight='semibold')
+            labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold')
     plt.xticks(rotation=60)
 
 
@@ -373,11 +393,13 @@ def generate_table(pos_one=1, pos_two=20):
     uel_required = teams_all['max_points'][uel_pos]
     # con_required = teams_all['max_points'][con_pos]
 
+    # reset teams index for use in generating label position
+    teams = teams.reset_index()
 
     def label_space(comp_req):
         """A function to calculate the positioning of a label on a competition bar"""
         # adjust text spacing to not overlap any data bars
-        for x in teams_all.itertuples():
+        for x in teams.itertuples():
             if x.max_points == comp_req:
                 label_space = x.Index - 0.5
                 break
@@ -386,34 +408,41 @@ def generate_table(pos_one=1, pos_two=20):
 
     # offset the line and label if overlapping UCL and UEL
     if uel_required == ucl_required:
-        ucl_offset = 1.05
+        ucl_offset = 0.92
         style_uel = (5, (5,5))
-        uel_offset = 0.15
-        alig = 'bottom'
+        uel_offset = 0.12
     else:
-        ucl_offset = 0.15
+        ucl_offset = 0.12
         style_uel = (0, (5,5))
-        uel_offset = 0.15
-        alig = 'baseline'
+        uel_offset = 0.12
 
     plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
     ucl_labelpos = label_space(ucl_required)
     plt.text(ucl_labelpos, ucl_required+ucl_offset, f"Above {ucl_required} points guarantees UCL",
-             color='#00004b', ha='left', weight='semibold', size='medium')
+             color='#00004b', ha='left', weight='semibold', size='medium', va='bottom')
 
     plt.axhline(y=uel_required, color='#ff6900', linestyle=style_uel)
     uel_labelpos = label_space(uel_required)
     plt.text(uel_labelpos, uel_required+uel_offset, f"Above {uel_required} points guarantees UEL",
-             color='#ff6900', ha='left', weight='semibold', size='medium', va=alig) #va='top',
+             color='#ff6900', ha='left', weight='semibold', size='medium', va='bottom')
 
     # plt.axhline(y=con_required, color='#00be14', linestyle=(0, (5, 5)))
     # con_labelpos = label_space(con_required)
     # plt.text(con_labelpos, con_required+0.15, f"Above {con_required} points guarantees CON",
-             # color='#00be14', ha='left', weight='semibold', size='medium', va=alig) #va='top',
+             # color='#00be14', ha='left', weight='semibold', size='medium', va='bottom')
 
 
     # Axis modifications
     axes = plt.gca() #Getting the current axis
+
+    # add an invisible ylabel on the right to make padding equal on both sides of graph
+    ax2 = axes.twinx()
+    ax2.set_ylabel("Points and remaining fixures in chronological order",
+                labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold', color='w')
+    ax2.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
+    ax2.tick_params(left = False, right = False , labelleft = False ,
+                    labelbottom = False, labelright = False, bottom = False)
+
     axes.spines['top'].set_visible(False)
     axes.spines['right'].set_visible(False)
 
@@ -423,7 +452,7 @@ def generate_table(pos_one=1, pos_two=20):
 
     date_time = datetime.today().strftime('%d-%m-%y %H.%M')
     title_name = f'History/PL Europe Race {date_time}.png'
-    plt.savefig(title_name, bbox_inches='tight', pad_inches=0.5, dpi=300)
+    plt.savefig(title_name, bbox_inches='tight', pad_inches=0.25, dpi=300)
     print('Done')
     # plt.show()
 
