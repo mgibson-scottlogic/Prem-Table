@@ -2,6 +2,7 @@
 
 # importing package
 from datetime import datetime
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
@@ -270,7 +271,8 @@ def generate_table(pos_one=1, pos_two=20):
         theory_min = min(theory_min, points)
 
         # create bar for current points, with team colour
-        cpts = plt.bar(row.name, points, color=row.colours, edgecolor=row.colours, width=barwidth)
+        cpts = plt.bar(row.short_name, points, 
+                       color=row.colours, edgecolor=row.colours, width=barwidth)
         bot = points
 
         # loop for every remaining fixture for current team: row['id]
@@ -278,7 +280,7 @@ def generate_table(pos_one=1, pos_two=20):
         for fx in fixtures_remaining.itertuples():
 
             dif_col = colours[fx.opposition_difficulty]
-            cur_bar = plt.bar(row.name, 3, bottom=bot,
+            cur_bar = plt.bar(row.short_name, 3, bottom=bot,
                               color=dif_col, edgecolor="#808080", lw=1.5, width=barwidth)
             perma_y = points
 
@@ -326,11 +328,10 @@ def generate_table(pos_one=1, pos_two=20):
 
     if total_y < 32:
         total_y = 32
-        plt.ylim((theory_max - 30), (theory_max + 2))
-        plt.yticks(np.arange((theory_max - 29), (theory_max + 2), 1))
-    else:
-        plt.ylim((theory_min-3), (theory_max + 2))
-        plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
+        theory_min = theory_max - 30
+
+    plt.ylim((theory_min-3), (theory_max + 2))
+    plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
 
     # correct the plot size
     new_x = starting_x - (step_x * (default_x - len(teams.index)))
@@ -380,7 +381,7 @@ def generate_table(pos_one=1, pos_two=20):
             labelpad=15, size=x_labelsize, fontname='sans-serif', weight='semibold', loc='center')
     plt.ylabel("Points and remaining fixures in chronological order",
             labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold')
-    plt.xticks(rotation=60)
+    plt.xticks(rotation=60, color='w')
 
 
     # add lines denoting UCL, UEL and CONF qualification: CONF #00be14
@@ -434,6 +435,29 @@ def generate_table(pos_one=1, pos_two=20):
 
     # Axis modifications
     axes = plt.gca() #Getting the current axis
+    axes.tick_params(axis='x', which='major', pad=15)
+
+    # replace tick labels with club crests
+    def get_club(name):
+        path = f"Logos/Colour/{name}.png"
+        im = plt.imread(path)
+        return im
+
+    def offset_image(coord, name, ax):
+        img = get_club(name)
+        im = OffsetImage(img, zoom=0.18)
+        im.image.axes = ax
+
+        ab = AnnotationBbox(im, (coord, theory_min-3),  xybox=(0., -30.), frameon=False,
+                            xycoords='data',  boxcoords="offset points", pad=0)
+
+        ax.add_artist(ab)
+
+    test = teams['id'].tolist()
+
+    for i, c in enumerate(test):
+        offset_image(i, c, axes)
+
 
     # add an invisible ylabel on the right to make padding equal on both sides of graph
     ax2 = axes.twinx()
