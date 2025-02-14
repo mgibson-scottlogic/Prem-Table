@@ -1,14 +1,90 @@
 """Code to generate a bar graph of English Premier League teams who can still qualify for Europe"""
 
 # importing package
-from datetime import datetime
+from datetime import datetime, timezone
+import os
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.ticker as plticker
+from matplotlib.ticker import AutoMinorLocator
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
 import pandas as pd
+from dotenv import load_dotenv
+from PIL import Image
 
 pd.set_option('display.max_columns', None)
+
+
+def generate_efl_data():
+    """Generate data for the EFL Championship"""
+
+    # Load API Key from .env file in the same location as this file. API used: https://www.football-data.org/
+    load_dotenv()
+    FOOTBALL_DATA_KEY = os.getenv('FOOTBALL_DATA_KEY')
+    pd.set_option('future.no_silent_downcasting', True)
+
+    url = 'https://api.football-data.org/v4/'
+    headers = { 'X-Auth-Token': FOOTBALL_DATA_KEY }
+
+    fdorg = requests.get(url+'competitions/ELC/matches?season=2024',
+                         headers=headers, timeout=10).json()
+    fixtures = pd.json_normalize(fdorg['matches'])
+
+    fixtures = fixtures.rename(columns={'homeTeam.id': 'team_h',
+                                        'awayTeam.id': 'team_a', 
+                                        'score.fullTime.home': 'team_h_score', 
+                                        'score.fullTime.away': 'team_a_score',
+                                        'status': 'finished',
+                                        'awayTeam.name': 'name_x',
+                                        'homeTeam.name': 'name_y',
+                                        'utcDate': 'kickoff_time'
+                                        })
+    fixtures = fixtures.replace({'FINISHED': True,
+                                 'TIMED': False,
+                                 'IN_PLAY': False,
+                                 'PAUSED': False,
+                                 'SCHEDULED': False})
+
+    fix_started = []
+
+    for row in fixtures.itertuples():
+        str_time = row.kickoff_time
+        fix_time = datetime.strptime(str_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        cur_time = datetime.now(timezone.utc)
+
+        if cur_time > fix_time:
+            fix_started.append(True)
+        else:
+            fix_started.append(False)
+
+    fixtures['started'] = fix_started
+    fixtures['finished_provisional'] = fixtures['finished']
+
+    teams = requests.get(url+'competitions/ELC/standings', headers=headers, timeout=10).json()
+    teams = pd.json_normalize(teams['standings'], 'table')
+    teams = teams.rename(columns={'team.shortName': 'short_name'})
+    teams.sort_values('team.name', inplace=True)
+
+    team_colours = ['#009ee0', '#e21a23', '#690039', '#035da9',
+                    '#009edc', '#8d8d8d', '#f8b100', '#ffdf1a',
+                    '#f28c00', '#e40f1b', '#00367a', '#00a650',
+                    '#fff500', '#143f2a', '#323c9c', '#0799d5',
+                    '#1a59a3', '#ee2227', '#4681cf', '#e1393e',
+                    '#e20025', '#030303', '#fff002', '#173675']
+    teams['colours'] = team_colours
+    teams = teams.rename(columns={'team.id': 'id'})
+
+    # create dictionary of team crests
+    team_crest = {}
+    for row in teams.itertuples():
+        crest_id = f"https://crests.football-data.org/{row.id}.png"
+        loaded_crest = Image.open(requests.get(crest_id, stream=True, timeout=10).raw).convert('RGBA')
+        team_crest[row.id] = loaded_crest
+
+    return teams, fixtures, team_crest
+
+
 
 
 def generate_data():
@@ -50,7 +126,16 @@ def generate_data():
         right_on='id'
     )
 
-    return teams, df2
+    # create dictionary of team crests
+    team_crest = {}
+    for row in teams.itertuples():
+        crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/Colour/{row.id}.png"
+        crest_load = Image.open(requests.get(crest_id, stream=True, timeout=10).raw).convert('RGBA')
+        # crest_name = f"Logos/Colour/{row.id}.png"
+        # crest_load = Image.open(crest_name)
+        team_crest[row.id] = crest_load
+
+    return teams, df2, team_crest
 
 
 def get_team_record(team_id, df2):
@@ -109,8 +194,9 @@ def get_team_record(team_id, df2):
         gd = str(gd)
 
     # fixture is in the future if it has not: Finished, Provisionally Finished, or Started
-    remaining_df = df2.loc[ ((~df2['finished'])&(~df2['finished_provisional'])&(~df2['started'])) &
-                       ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
+    remaining_df = df2.loc[ ((~df2['finished']) & (~df2['finished_provisional']) &
+                             ( (df2['started'] == False) | (df2['started'].isnull()) )) &
+                            ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
     remaining_df = remaining_df.reset_index()
 
     pts = int((w*3)+(d))
@@ -128,8 +214,9 @@ def get_team_record(team_id, df2):
 
 def get_remaining_fixtures(team_id, df2):
     """Takes a team ID and returns a pandas dataframe of remaining fixtures."""
-    filtered_df = df2.loc[ ((~df2['finished'])&(~df2['finished_provisional'])&(~df2['started'])) &
-                       ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
+    filtered_df = df2.loc[ ((~df2['finished']) & (~df2['finished_provisional']) &
+                            ( (df2['started'] == False) | (df2['started'].isnull()) )) &
+                           ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
     filtered_df = filtered_df.reset_index()
     #filtered_df[['name_y','team_h_score', 'team_a_score', 'name_x']]
 
@@ -144,16 +231,25 @@ def get_remaining_fixtures(team_id, df2):
             location = "H"
             oppos = row.team_a
             tname = row.name_x
-            opp_diff = row.team_h_difficulty
+            try:
+                opp_diff = row.team_h_difficulty
+            except AttributeError:
+                opp_diff = 3
         else:
             location = "A"
             oppos = row.team_h
             tname = row.name_y
-            opp_diff = row.team_a_difficulty
+            try:
+                opp_diff = row.team_a_difficulty
+            except AttributeError:
+                opp_diff = 3
 
-        date = row.kickoff_time[5:10]
-        left, right = date.split('-')
-        newdate = f"{location} {right}-{left}"
+        if row.kickoff_time is None:
+            newdate = "TBC"
+        else:
+            date = row.kickoff_time[5:10]
+            left, right = date.split('-')
+            newdate = f"{location} {right}-{left}"
         # print(newdate)
         remaining_fix.append(newdate)
         fix_location.append(location)
@@ -186,7 +282,7 @@ def generate_table(pos_one=1, pos_two=20):
     pos_two -- the second position in the table to show on the image (default 20)
     """
     # use the global teams variable
-    teams, df2 = generate_data()
+    teams, df2, team_crest = generate_data()
 
 
     # add max points row, goal difference, and goals scored to dataframe (for H2H tiebreakers)
@@ -212,7 +308,7 @@ def generate_table(pos_one=1, pos_two=20):
 
     # convert table position to usable numbers
     remove_from_top = pos_one - 1
-    remove_from_bottom = 20 - pos_two
+    remove_from_bottom = len(teams_all.index) - pos_two
 
     teams.drop(teams.tail(remove_from_bottom).index, inplace=True)
     teams.drop(teams.head(remove_from_top).index, inplace=True)
@@ -224,6 +320,10 @@ def generate_table(pos_one=1, pos_two=20):
     default_x = 20
 
     x_offset = {
+        24: 0.0120,
+        23: 0.0125,
+        22: 0.0135,
+        21: 0.0140,
         20: 0.0150,
         19: 0.0160,
         18: 0.0175,
@@ -255,23 +355,21 @@ def generate_table(pos_one=1, pos_two=20):
     # Fixture Difficulty Colours
     colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272'}
 
-    # create dictionary of team crests
-    team_crest = {}
-    for row in teams_all.itertuples():
-        crest_name = f"Logos/{row.id}.png"
-        crest_load = plt.imread(crest_name)
-        team_crest[row.id] = crest_load
-
     # loop for every team that needs a bar
     for row in teams.itertuples():
         points, max_pts, goal_difference, goals_for = get_team_record(row.id, df2)
         goal_difference = f'GD {goal_difference}'
 
+        # Calculate points deductions
+        if row.id == 356: # SHU 2pt deduction
+            points -= 2
+            max_pts -= 2
+
         # update lowest theoretical points total if new teams is lower
         theory_min = min(theory_min, points)
 
         # create bar for current points, with team colour
-        cpts = plt.bar(row.short_name, points, 
+        cpts = plt.bar(row.short_name, points,
                        color=row.colours, edgecolor=row.colours, width=barwidth)
         bot = points
 
@@ -295,7 +393,7 @@ def generate_table(pos_one=1, pos_two=20):
                 ytop = y + h/1.09
 
                 # plot the team logo and the fixture date
-                imdis =  team_crest[fx.opposition_id]
+                imdis =  team_crest[fx.opposition_id].convert('LA')
                 plt.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
 
                 plt.text(x+w/2, y+0.18, fx.remaining_fixtures,
@@ -323,6 +421,11 @@ def generate_table(pos_one=1, pos_two=20):
 
     # get the max and min points, then add padding to graph to improve readability
     # if y height under 30, set height to 30 for better visual
+
+    # offset y axis if bottom would fall on a multiple of 5, for readability
+    if (theory_min - 3) % 5 == 0:
+        theory_min -= 1
+
     theory_max = teams['max_points'].max()
     total_y = int((theory_max + 2) - (theory_min-3))
 
@@ -346,7 +449,7 @@ def generate_table(pos_one=1, pos_two=20):
 
 
     # format position numbers
-    title_pos = [remove_from_top+1, 20 - remove_from_bottom]
+    title_pos = [remove_from_top+1, len(teams_all.index) - remove_from_bottom]
     for i, x in enumerate(title_pos):
         if x == 1:
             title_pos[i] = '1st'
@@ -417,34 +520,42 @@ def generate_table(pos_one=1, pos_two=20):
         style_uel = (0, (5,5))
         uel_offset = 0.12
 
-    plt.axhline(y=ucl_required, color='#00004b', linestyle=(0, (5, 5)) )
-    ucl_labelpos = label_space(ucl_required)
-    plt.text(ucl_labelpos, ucl_required+ucl_offset, f"Above {ucl_required} points guarantees UCL",
-             color='#00004b', ha='left', weight='semibold', size='medium', va='bottom')
+    def generate_threshold_line(threshold_num, color, line_offset, line_style, line_message):
+        plt.axhline(y=threshold_num, color=color, linestyle=line_style)
+        labelpos = label_space(threshold_num)
+        plt.text(labelpos, threshold_num+line_offset, line_message,
+                 color=color, ha='left', weight='semibold', size='medium', va='bottom')
 
-    plt.axhline(y=uel_required, color='#ff6900', linestyle=style_uel)
-    uel_labelpos = label_space(uel_required)
-    plt.text(uel_labelpos, uel_required+uel_offset, f"Above {uel_required} points guarantees UEL",
-             color='#ff6900', ha='left', weight='semibold', size='medium', va='bottom')
+    generate_threshold_line(ucl_required, '#00004b', ucl_offset, (0, (5, 5)),
+                            f"Above {ucl_required} points guarantees UCL")
 
-    # plt.axhline(y=con_required, color='#00be14', linestyle=(0, (5, 5)))
-    # con_labelpos = label_space(con_required)
-    # plt.text(con_labelpos, con_required+0.15, f"Above {con_required} points guarantees CON",
-             # color='#00be14', ha='left', weight='semibold', size='medium', va='bottom')
+    generate_threshold_line(uel_required, '#ff6900', uel_offset, style_uel,
+                            f"Above {uel_required} points guarantees UEL")
+
+    # generate_threshold_line(con_required, '#00be14', con_offset, (0, (5, 5)),
+                            # f"Above {con_required} points guarantees CON")
 
 
     # Axis modifications
     axes = plt.gca() #Getting the current axis
-    axes.tick_params(axis='x', which='major', pad=15)
+
+    # format ticks to show every multiple of 5, and add grid behind to increase readability
+    intervals = float(5)
+
+    loc = plticker.MultipleLocator(base=intervals)
+    axes.yaxis.set_major_locator(loc)
+
+    minor_locator = AutoMinorLocator(intervals)
+    axes.yaxis.set_minor_locator(minor_locator)
+
+    axes.tick_params(axis='y', which='both', length=4, width=1)
+    axes.tick_params(axis='x', which='both', pad=15)
+    axes.set_axisbelow(True)
+    axes.grid(which='major', axis='y', linestyle=(0, (4, 4)))
 
     # replace tick labels with club crests
-    def get_club(name):
-        path = f"Logos/Colour/{name}.png"
-        im = plt.imread(path)
-        return im
-
     def offset_image(coord, name, ax):
-        img = get_club(name)
+        img = team_crest[name]
         im = OffsetImage(img, zoom=0.18)
         im.image.axes = ax
 
@@ -453,9 +564,9 @@ def generate_table(pos_one=1, pos_two=20):
 
         ax.add_artist(ab)
 
-    test = teams['id'].tolist()
+    tick_replace = teams['id'].tolist()
 
-    for i, c in enumerate(test):
+    for i, c in enumerate(tick_replace):
         offset_image(i, c, axes)
 
 
