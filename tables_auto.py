@@ -19,13 +19,14 @@ pd.set_option('display.max_columns', None)
 def generate_efl_data():
     """Generate data for the EFL Championship"""
 
-    # Load API Key from .env file in the same location as this file. API used: https://www.football-data.org/
+    # Load API Key from .env file in the same location as this file.
+    # API used: https://www.football-data.org/
     load_dotenv()
-    FOOTBALL_DATA_KEY = os.getenv('FOOTBALL_DATA_KEY')
+    football_data_key = os.getenv('FOOTBALL_DATA_KEY')
     pd.set_option('future.no_silent_downcasting', True)
 
     url = 'https://api.football-data.org/v4/'
-    headers = { 'X-Auth-Token': FOOTBALL_DATA_KEY }
+    headers = { 'X-Auth-Token': football_data_key }
 
     fdorg = requests.get(url+'competitions/ELC/matches?season=2024',
                          headers=headers, timeout=10).json()
@@ -79,7 +80,9 @@ def generate_efl_data():
     team_crest = {}
     for row in teams.itertuples():
         crest_id = f"https://crests.football-data.org/{row.id}.png"
-        loaded_crest = Image.open(requests.get(crest_id, stream=True, timeout=10).raw).convert('RGBA')
+        loaded_crest = Image.open(requests.get(crest_id,
+                                               stream=True,
+                                               timeout=10).raw).convert('RGBA')
         team_crest[row.id] = loaded_crest
 
     return teams, fixtures, team_crest
@@ -274,23 +277,14 @@ def get_remaining_fixtures(team_id, df2):
     return filtered_df
 
 
-def generate_table(pos_one=1, pos_two=20):
-    """Function to generate the visualization of the table
-    
-    Keyword Arguments:
-    pos_one -- the first position in the table to show on the image (default 1)
-    pos_two -- the second position in the table to show on the image (default 20)
-    """
-    # use the global teams variable
-    teams, df2, team_crest = generate_data()
-
-
+def gen_additional_data(teams, df2):
+    '''Generates additional data for each team'''
     # add max points row, goal difference, and goals scored to dataframe (for H2H tiebreakers)
     max_points = []
     gd = []
     gf = []
     for team in teams.itertuples():
-        points, max_pts, goal_difference, goals_for = get_team_record(team.id, df2)
+        _points, max_pts, goal_difference, goals_for = get_team_record(team.id, df2)
         max_points.append(max_pts)
         gd.append(int(goal_difference))
         gf.append(goals_for)
@@ -299,12 +293,70 @@ def generate_table(pos_one=1, pos_two=20):
     teams['goal_difference'] = gd
     teams['goals_for'] = gf
     teams = teams.sort_values(by=['max_points', 'goal_difference', 'goals_for'],
-                              ascending=[False, False, False])
-
+                            ascending=[False, False, False])
 
     # make dataframe with all teams in, in order to remove extraneous teams from main dataset
     teams_all = teams.copy()
 
+    return teams, teams_all
+
+
+def points_deductions(row, points, max_pts):
+    '''Calculate points deductions for the current team'''
+    # Calculate points deductions
+    if row == 356: # SHU 2pt deduction
+        points -= 2
+        max_pts -= 2
+        return points, max_pts
+    else:
+        return points, max_pts
+
+
+def set_title_and_labels(title_text, total_y, teams):
+    '''Set the title and axis labels'''
+    # adjust label size when image gets smaller
+    x_labelsize = 17
+    y_labelsize = 17
+
+    if total_y < 40:
+        y_labelsize = 15
+
+    if len(teams.index) < 10:
+        x_labelsize = 15
+
+    plt.title(title_text, size=16, fontname='sans-serif', weight='semibold')
+
+    plt.xlabel("Teams in order of highest possible points total   ",
+            labelpad=15, size=x_labelsize, fontname='sans-serif', weight='semibold', loc='center')
+    plt.ylabel("Points and remaining fixures in chronological order",
+            labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold')
+    plt.xticks(rotation=60, color='w')
+
+    return y_labelsize
+
+
+def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
+    """Function to generate the visualization of the table
+
+    Keyword Arguments:
+        competition -- a string denoting which competition to generate the graph for ('PL' or 'ELC)
+
+        lines_to_generate -- a 2D array containing all lines to be shown on the image 
+        ( [[position, 'message to show on line', line colour], ...] )
+        include __ in the message to replace with the points value of the line
+
+        pos_one -- the first position in the table to show on the image (default 1)
+
+        pos_two -- the second position in the table to show on the image (default 20)
+    """
+    # convert competition code into correct data load
+    if competition == 'PL':
+        teams, df2, team_crest = generate_data()
+    elif competition == 'ELC':
+        teams, df2, team_crest = generate_efl_data()
+    else:
+        raise ValueError('Only PL or ELC is allowed')
+    teams, teams_all = gen_additional_data(teams, df2)
 
     # convert table position to usable numbers
     remove_from_top = pos_one - 1
@@ -312,7 +364,6 @@ def generate_table(pos_one=1, pos_two=20):
 
     teams.drop(teams.tail(remove_from_bottom).index, inplace=True)
     teams.drop(teams.head(remove_from_top).index, inplace=True)
-
 
     # create the canvas and general constants
     starting_x = 18
@@ -357,13 +408,11 @@ def generate_table(pos_one=1, pos_two=20):
 
     # loop for every team that needs a bar
     for row in teams.itertuples():
-        points, max_pts, goal_difference, goals_for = get_team_record(row.id, df2)
+        points, max_pts, goal_difference, _goals_for = get_team_record(row.id, df2)
         goal_difference = f'GD {goal_difference}'
 
         # Calculate points deductions
-        if row.id == 356: # SHU 2pt deduction
-            points -= 2
-            max_pts -= 2
+        points, max_pts = points_deductions(row.id, points, max_pts)
 
         # update lowest theoretical points total if new teams is lower
         theory_min = min(theory_min, points)
@@ -419,20 +468,21 @@ def generate_table(pos_one=1, pos_two=20):
     # axis is slightly shorter than the number of teams being plotted
     ax_width = len(teams.index) - 0.5
 
-    # get the max and min points, then add padding to graph to improve readability
-    # if y height under 30, set height to 30 for better visual
 
     # offset y axis if bottom would fall on a multiple of 5, for readability
     if (theory_min - 3) % 5 == 0:
         theory_min -= 1
 
+    # get the max and min points, then add padding to graph to improve readability
     theory_max = teams['max_points'].max()
     total_y = int((theory_max + 2) - (theory_min-3))
 
+    # if y height under 30, set height to 30 for better visual
     if total_y < 32:
         total_y = 32
         theory_min = theory_max - 30
 
+    # change limits for improved readability, and set ticks between new limits
     plt.ylim((theory_min-3), (theory_max + 2))
     plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
 
@@ -442,11 +492,9 @@ def generate_table(pos_one=1, pos_two=20):
 
     plt.gcf().set_size_inches(new_x, new_y)
 
-
     # choose correct x offset from x_offset dict
     main_offset = x_offset[len(teams.index)]
     plt.margins(x=main_offset, tight=None)
-
 
     # format position numbers
     title_pos = [remove_from_top+1, len(teams_all.index) - remove_from_bottom]
@@ -457,9 +505,16 @@ def generate_table(pos_one=1, pos_two=20):
             title_pos[i] = '2nd'
         elif x == 3:
             title_pos[i] = '3rd'
+        elif x == 21:
+            title_pos[i] = '21st'
+        elif x == 22:
+            title_pos[i] = '22nd'
+        elif x == 23:
+            title_pos[i] = '23rd'
         else:
             title_pos[i] = f'{title_pos[i]}th'
 
+    # set the title and axes labels
 
     # set axis lables and title
     cur_day = datetime.today().strftime('%d-%m-%y')
@@ -468,73 +523,74 @@ def generate_table(pos_one=1, pos_two=20):
         f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}   '
         )
 
-    # adjust label size when image gets smaller
-    x_labelsize = 17
-    y_labelsize = 17
-
-    if total_y < 40:
-        y_labelsize = 15
-
-    if len(teams.index) < 10:
-        x_labelsize = 15
-
-    plt.title(title_text, size=16, fontname='sans-serif', weight='semibold')
-
-    plt.xlabel("Teams in order of highest possible points total   ",
-            labelpad=15, size=x_labelsize, fontname='sans-serif', weight='semibold', loc='center')
-    plt.ylabel("Points and remaining fixures in chronological order",
-            labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold')
-    plt.xticks(rotation=60, color='w')
-
-
-    # add lines denoting UCL, UEL and CONF qualification: CONF #00be14
-    ucl_pos = 4
-    uel_pos = 5
-    # con_pos = 6
-
-    teams_all = teams_all.reset_index()
-    ucl_required = teams_all['max_points'][ucl_pos]
-    uel_required = teams_all['max_points'][uel_pos]
-    # con_required = teams_all['max_points'][con_pos]
+    y_labelsize = set_title_and_labels(title_text, total_y, teams)
 
     # reset teams index for use in generating label position
     teams = teams.reset_index()
+    teams_all = teams_all.reset_index()
 
-    def label_space(comp_req):
-        """A function to calculate the positioning of a label on a competition bar"""
-        # adjust text spacing to not overlap any data bars
-        for x in teams.itertuples():
-            if x.max_points == comp_req:
-                label_space = x.Index - 0.5
-                break
+    class ThresholdLine():
+        """Class representing a horizontal competition threshhold line"""
+        def __init__(self, position, label, colour):
+            self.position = position
+            self.pts_required = teams_all['max_points'][self.position]
+            self.label = label.replace('__', str(self.pts_required))
+            self.colour = colour
+            self.linestyle = (0, (5, 5))
+            self.label_space()
+            self.label_offset = self.pts_required + 0.12
+            self.text = None
+            self.line = None
 
-        return label_space
+        def __str__(self):
+            return f"{self.position} {self.label} {self.colour}"
 
-    # offset the line and label if overlapping UCL and UEL
-    if uel_required == ucl_required:
-        ucl_offset = 0.92
-        style_uel = (5, (5,5))
-        uel_offset = 0.12
-    else:
-        ucl_offset = 0.12
-        style_uel = (0, (5,5))
-        uel_offset = 0.12
+        def label_space(self):
+            """A function to calculate the positioning of a label on a competition bar"""
+            # adjust text spacing to not overlap any data bars
+            for x in teams.itertuples():
+                if x.max_points == self.pts_required:
+                    label_space = x.Index - 0.5
+                    break
+                label_space = None
 
-    def generate_threshold_line(threshold_num, color, line_offset, line_style, line_message):
-        plt.axhline(y=threshold_num, color=color, linestyle=line_style)
-        labelpos = label_space(threshold_num)
-        plt.text(labelpos, threshold_num+line_offset, line_message,
-                 color=color, ha='left', weight='semibold', size='medium', va='bottom')
+            self.labelpos = label_space
 
-    generate_threshold_line(ucl_required, '#00004b', ucl_offset, (0, (5, 5)),
-                            f"Above {ucl_required} points guarantees UCL")
+        def generate_threshold_line(self):
+            """Function to generate the line and plot it on the figure"""
+            # only draw the line if there are bars that max out under the value
+            # e.g: if image shows pos 1 - 10, dont draw the relegation line, as there is no need
+            if self.labelpos is not None:
+                lne = plt.axhline(y=self.pts_required, color=self.colour, linestyle=self.linestyle)
+                txt = plt.text(self.labelpos, self.label_offset, self.label,
+                        color=self.colour, ha='left', weight='semibold', size='medium', va='bottom')
+                self.text = txt
+                self.line = lne
+            else:
+                pass
 
-    generate_threshold_line(uel_required, '#ff6900', uel_offset, style_uel,
-                            f"Above {uel_required} points guarantees UEL")
+    # create a list of ThresholdLine objects, to iterate through.
+    obj_lst = []
+    for x in lines_to_generate:
+        print(x)
+        # Position, Label, Hex Colour Code
+        tvar = ThresholdLine(x[0], x[1], x[2])
+        obj_lst.append(tvar)
 
-    # generate_threshold_line(con_required, '#00be14', con_offset, (0, (5, 5)),
-                            # f"Above {con_required} points guarantees CON")
+    # for each line, check if overlapping, and change positioning of label if they are
+    for index, line in enumerate(obj_lst):
+        # oldline is the previous line by index, but not if the index would be -1
+        oldline = obj_lst[index-1]
+        if index - 1 < 0:
+            pass
+        elif oldline.pts_required == line.pts_required:
+            # update the new line to be offset, and move the old label higher
+            line.linestyle = (5, (5,5))
+            oldline.label_offset += 0.8
+            oldline.text.set_position((oldline.labelpos, oldline.label_offset))
+            plt.draw()
 
+        line.generate_threshold_line()
 
     # Axis modifications
     axes = plt.gca() #Getting the current axis
@@ -573,7 +629,8 @@ def generate_table(pos_one=1, pos_two=20):
     # add an invisible ylabel on the right to make padding equal on both sides of graph
     ax2 = axes.twinx()
     ax2.set_ylabel("Points and remaining fixures in chronological order",
-                labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold', color='w')
+                   labelpad=15, size=y_labelsize, fontname='sans-serif',
+                   weight='semibold', color='w', zorder=0)
     ax2.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
     ax2.tick_params(left = False, right = False , labelleft = False ,
                     labelbottom = False, labelright = False, bottom = False)
@@ -591,4 +648,19 @@ def generate_table(pos_one=1, pos_two=20):
     print('Done')
     # plt.show()
 
-generate_table(1, 9)
+# CONF: [6, "Above __ points guarantees CON", '#00be14'],
+# can only guarantee CONF some time after League Cup Final
+lines_pl = [
+    [4, "Above __ points guarantees UCL", '#00004b'],
+    [5, "Above __ points guarantees UEL", '#ff6900'],
+    [18,"Above __ points for safety", '#e21a23']
+]
+
+lines_elc = [
+    [2, "Above __ points guarantees automatic promotion", '#52d577'],
+    [6, "Above __ points guarantees playoffs", '#f5da2b'],
+    [21,"Above __ points for safety", '#e21a23']
+]
+
+# generate_table('ELC', lines_elc, pos_one=1, pos_two=24)
+generate_table('PL', lines_pl, pos_one=1, pos_two=20)
