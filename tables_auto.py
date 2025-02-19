@@ -3,6 +3,7 @@
 # importing package
 from datetime import datetime, timezone
 import os
+import time
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.ticker as plticker
 from matplotlib.ticker import AutoMinorLocator
@@ -47,21 +48,6 @@ def generate_efl_data():
                                  'PAUSED': False,
                                  'SCHEDULED': False})
 
-    fix_started = []
-
-    for row in fixtures.itertuples():
-        str_time = row.kickoff_time
-        fix_time = datetime.strptime(str_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        cur_time = datetime.now(timezone.utc)
-
-        if cur_time > fix_time:
-            fix_started.append(True)
-        else:
-            fix_started.append(False)
-
-    fixtures['started'] = fix_started
-    fixtures['finished_provisional'] = fixtures['finished']
-
     teams = requests.get(url+'competitions/ELC/standings', headers=headers, timeout=10).json()
     teams = pd.json_normalize(teams['standings'], 'table')
     teams = teams.rename(columns={'team.shortName': 'short_name'})
@@ -85,9 +71,52 @@ def generate_efl_data():
                                                timeout=10).raw).convert('RGBA')
         team_crest[row.id] = loaded_crest
 
+    fix_started = []
+    home_diff = []
+    away_diff = []
+
+    for row in fixtures.itertuples():
+        str_time = row.kickoff_time
+        fix_time = datetime.strptime(str_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        cur_time = datetime.now(timezone.utc)
+
+        if row.finished == "POSTPONED":
+            fixtures.at[row.Index, 'finished'] = False
+            fixtures.at[row.Index, 'kickoff_time'] = "None"
+
+        if cur_time > fix_time:
+            fix_started.append(True)
+        else:
+            fix_started.append(False)
+
+        # determine difficulty of the away team by league table position
+        hpos = teams.loc[teams.id == row.team_a, 'position'].item()
+        if hpos <= 4:
+            away_diff.append(5)
+        elif 5 <= hpos <= 8:
+            away_diff.append(4)
+        elif 9 <= hpos <= 20:
+            away_diff.append(3)
+        else:
+            away_diff.append(2)
+
+        # determine difficulty of the home team by league table position
+        apos = teams.loc[teams.id == row.team_h, 'position'].item()
+        if apos <= 4:
+            home_diff.append(5)
+        elif 5 <= apos <= 8:
+            home_diff.append(4)
+        elif 9 <= apos <= 20:
+            home_diff.append(3)
+        else:
+            home_diff.append(2)
+
+    fixtures['team_h_difficulty'] = away_diff
+    fixtures['team_a_difficulty'] = home_diff
+    fixtures['started'] = fix_started
+    fixtures['finished_provisional'] = fixtures['finished']
+
     return teams, fixtures, team_crest
-
-
 
 
 def generate_data():
@@ -214,6 +243,13 @@ def get_team_record(team_id, df2):
 
     return pts, max_theory, gd, gf
 
+def putfirst(df, i):
+    "Moves the specified index 'i' in dataframe 'df' to the top of the dataframe"
+    df["new"] = range(1,len(df)+1)
+    df.loc[df.index==i, 'new'] = 0
+    df.sort_values("new", inplace=True)
+    df.drop('new', axis=1)
+
 
 def get_remaining_fixtures(team_id, df2):
     """Takes a team ID and returns a pandas dataframe of remaining fixtures."""
@@ -247,8 +283,9 @@ def get_remaining_fixtures(team_id, df2):
             except AttributeError:
                 opp_diff = 3
 
-        if row.kickoff_time is None:
+        if (row.kickoff_time is None) or (row.kickoff_time == "None"):
             newdate = "TBC"
+            opp_diff = "TBC"
         else:
             date = row.kickoff_time[5:10]
             left, right = date.split('-')
@@ -269,6 +306,10 @@ def get_remaining_fixtures(team_id, df2):
 
     filtered_df = filtered_df[['remaining_fixtures', 'fixture_location',
                                'opposition_id', 'opposition_name', 'opposition_difficulty']]
+
+    for row in filtered_df.itertuples():
+        if row.remaining_fixtures == "TBC":
+            putfirst(filtered_df, row.Index)
 
     # testing for smaller image size, need to -10 to remaining as well
     # filtered_df.drop(filtered_df.tail(10).index, inplace=True)
@@ -335,7 +376,7 @@ def set_title_and_labels(title_text, total_y, teams):
     return y_labelsize
 
 
-def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
+def generate_table(competition, lines_to_generate, title_text_1, file_text, pos_one=1, pos_two=20):
     """Function to generate the visualization of the table
 
     Keyword Arguments:
@@ -349,6 +390,8 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
 
         pos_two -- the second position in the table to show on the image (default 20)
     """
+    origin_time = time.time()
+
     # convert competition code into correct data load
     if competition == 'PL':
         teams, df2, team_crest = generate_data()
@@ -401,10 +444,13 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
 
     barwidth = 0.7
     theory_min = 114
+
+    data_time = time.time()
+
     plt.figure(figsize=(starting_x, starting_y))
 
     # Fixture Difficulty Colours
-    colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272'}
+    colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272', 'TBC': '#a1a1a1'}
 
     # loop for every team that needs a bar
     for row in teams.itertuples():
@@ -422,7 +468,7 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
                        color=row.colours, edgecolor=row.colours, width=barwidth)
         bot = points
 
-        # loop for every remaining fixture for current team: row['id]
+        # loop for every remaining fixture for current team: row.id
         fixtures_remaining = get_remaining_fixtures(row.id, df2)
         for fx in fixtures_remaining.itertuples():
 
@@ -519,7 +565,7 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
     # set axis lables and title
     cur_day = datetime.today().strftime('%d-%m-%y')
     title_text = (
-        f'EPL: The race for European Competitions   '
+        title_text_1 +
         f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}   '
         )
 
@@ -572,7 +618,6 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
     # create a list of ThresholdLine objects, to iterate through.
     obj_lst = []
     for x in lines_to_generate:
-        print(x)
         # Position, Label, Hex Colour Code
         tvar = ThresholdLine(x[0], x[1], x[2])
         obj_lst.append(tvar)
@@ -642,25 +687,44 @@ def generate_table(competition, lines_to_generate, pos_one=1, pos_two=20):
     axes.spines['bottom'].set_linewidth(2)
     axes.spines['left'].set_linewidth(2)
 
+    graph_time = time.time()
+
     date_time = datetime.today().strftime('%d-%m-%y %H.%M')
-    title_name = f'History/PL Europe Race {date_time}.png'
-    plt.savefig(title_name, bbox_inches='tight', pad_inches=0.25, dpi=300)
-    print('Done')
+    title_name = f'{file_text} {date_time}.png'
+
+    cur_dir_path = os.getcwd()
+    sub_name = rf'History\{competition}'
+    sub_path = os.path.join(cur_dir_path, sub_name)
+
+    if not os.path.exists(sub_path):
+        os.makedirs(sub_path)
+
+    file_path = os.path.join(sub_path, title_name)
+
+    plt.savefig(file_path, bbox_inches='tight', pad_inches=0.25, dpi=300)
+    print(f'Done. \nTime to gen data: {round(data_time - origin_time, 3)} sec.'
+          f'\nTime to gen graph: {round(graph_time - data_time, 3)} sec.'
+          f'\nTime to save: {round(time.time() - graph_time, 3)} sec.')
     # plt.show()
 
 # CONF: [6, "Above __ points guarantees CON", '#00be14'],
 # can only guarantee CONF some time after League Cup Final
+
+TITLE_PL = 'EPL: The race for European Competitions   '
+FILE_PL = 'PL Europe Race'
 lines_pl = [
     [4, "Above __ points guarantees UCL", '#00004b'],
     [5, "Above __ points guarantees UEL", '#ff6900'],
     [18,"Above __ points for safety", '#e21a23']
 ]
 
+TITLE_ELC = 'Championship: The race for Promotion   '
+FILE_ELC = 'Championship Promotion Race'
 lines_elc = [
     [2, "Above __ points guarantees automatic promotion", '#52d577'],
-    [6, "Above __ points guarantees playoffs", '#f5da2b'],
+    [6, "Above __ points guarantees playoffs", '#d6bf25'],
     [21,"Above __ points for safety", '#e21a23']
 ]
 
-# generate_table('ELC', lines_elc, pos_one=1, pos_two=24)
-generate_table('PL', lines_pl, pos_one=1, pos_two=20)
+# generate_table('ELC', lines_elc, TITLE_ELC, FILE_ELC, pos_one=1, pos_two=24)
+generate_table('PL', lines_pl, TITLE_PL, FILE_PL, pos_one=1, pos_two=10)
