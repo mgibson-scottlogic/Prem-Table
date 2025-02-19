@@ -50,7 +50,7 @@ def generate_efl_data():
 
     teams = requests.get(url+'competitions/ELC/standings', headers=headers, timeout=10).json()
     teams = pd.json_normalize(teams['standings'], 'table')
-    teams = teams.rename(columns={'team.shortName': 'short_name'})
+    teams = teams.rename(columns={'team.tla': 'short_name'})
     teams.sort_values('team.name', inplace=True)
 
     team_colours = ['#009ee0', '#e21a23', '#690039', '#035da9',
@@ -62,10 +62,13 @@ def generate_efl_data():
     teams['colours'] = team_colours
     teams = teams.rename(columns={'team.id': 'id'})
 
+    # replace Sheffield Wednesday short name, as it is the same as Sheffield United's
+    teams.loc[teams.id==345, 'short_name'] = "SHW"
+
     # create dictionary of team crests
     team_crest = {}
     for row in teams.itertuples():
-        crest_id = f"https://crests.football-data.org/{row.id}.png"
+        crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/ELC/{row.id}.png"
         loaded_crest = Image.open(requests.get(crest_id,
                                                stream=True,
                                                timeout=10).raw).convert('RGBA')
@@ -161,7 +164,7 @@ def generate_data():
     # create dictionary of team crests
     team_crest = {}
     for row in teams.itertuples():
-        crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/Colour/{row.id}.png"
+        crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/PL/{row.id}.png"
         crest_load = Image.open(requests.get(crest_id, stream=True, timeout=10).raw).convert('RGBA')
         # crest_name = f"Logos/Colour/{row.id}.png"
         # crest_load = Image.open(crest_name)
