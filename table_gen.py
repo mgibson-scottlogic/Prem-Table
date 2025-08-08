@@ -807,8 +807,10 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     sub_name = rf'History\{competition}'
     sub_path = os.path.join(cur_dir_path, sub_name)
 
-    if not os.path.exists(sub_path):
-        os.makedirs(sub_path)
+    cur_dir_path = os.getcwd()
+    sub_path = os.path.join(cur_dir_path, "History", competition)
+
+    os.makedirs(sub_path, exist_ok=True)
 
     file_path = os.path.join(sub_path, title_name)
 
