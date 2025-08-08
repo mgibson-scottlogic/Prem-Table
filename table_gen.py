@@ -803,16 +803,14 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     date_time = datetime.today().strftime('%d-%m-%y %H.%M')
     title_name = f'{file_text} {date_time}.png'
 
-    cur_dir_path = os.getcwd()
-    sub_name = rf'History\{competition}'
-    sub_path = os.path.join(cur_dir_path, sub_name)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        base_folder = os.path.join(os.getcwd(), "History_GH", competition)
+    else:
+        base_folder = os.path.join(os.getcwd(), "History", competition)
 
-    cur_dir_path = os.getcwd()
-    sub_path = os.path.join(cur_dir_path, "History", competition)
+    os.makedirs(base_folder, exist_ok=True)
 
-    os.makedirs(sub_path, exist_ok=True)
-
-    file_path = os.path.join(sub_path, title_name)
+    file_path = os.path.join(base_folder, title_name)
 
     plt.savefig(file_path, bbox_inches='tight', pad_inches=0.25, dpi=300)
     print(f'Done. \nTime to gen data: {round(data_time - origin_time, 3)} sec.'
