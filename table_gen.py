@@ -2,6 +2,7 @@
 
 # importing package
 from datetime import datetime, timezone
+from collections import defaultdict
 import os
 import time
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
@@ -29,7 +30,7 @@ def generate_efl_data():
     url = 'https://api.football-data.org/v4/'
     headers = { 'X-Auth-Token': football_data_key }
 
-    fdorg = requests.get(url+'competitions/ELC/matches?season=2024',
+    fdorg = requests.get(url+'competitions/ELC/matches?season=2025',
                          headers=headers, timeout=10).json()
     fixtures = pd.json_normalize(fdorg['matches'])
 
@@ -38,6 +39,7 @@ def generate_efl_data():
                                         'score.fullTime.home': 'team_h_score', 
                                         'score.fullTime.away': 'team_a_score',
                                         'status': 'finished',
+                                        'matchday': 'event',
                                         'awayTeam.name': 'name_x',
                                         'homeTeam.name': 'name_y',
                                         'utcDate': 'kickoff_time'
@@ -69,54 +71,43 @@ def generate_efl_data():
     team_crest = {}
     for row in teams.itertuples():
         crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/ELC/{row.id}.png"
-        loaded_crest = Image.open(requests.get(crest_id,
-                                               stream=True,
-                                               timeout=10).raw).convert('RGBA')
+        crest_id = f"Logos/ELC/{row.id}.png"
+        print(row.id)
+        loaded_crest = Image.open(crest_id)
+        # loaded_crest = Image.open(requests.get(crest_id,
+        #                                        stream=True,
+        #                                        timeout=10).raw).convert('RGBA')
         team_crest[row.id] = loaded_crest
 
-    fix_started = []
-    home_diff = []
-    away_diff = []
 
-    for row in fixtures.itertuples():
-        str_time = row.kickoff_time
-        fix_time = datetime.strptime(str_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    def get_start_time(row):
+        fix_time = datetime.strptime(row, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         cur_time = datetime.now(timezone.utc)
 
-        if row.finished == "POSTPONED":
-            fixtures.at[row.Index, 'finished'] = False
-            fixtures.at[row.Index, 'kickoff_time'] = "None"
-
         if cur_time > fix_time:
-            fix_started.append(True)
-        else:
-            fix_started.append(False)
+            return True
+        return False
 
-        # determine difficulty of the away team by league table position
-        hpos = teams.loc[teams.id == row.team_a, 'position'].item()
-        if hpos <= 4:
-            away_diff.append(5)
-        elif 5 <= hpos <= 8:
-            away_diff.append(4)
-        elif 9 <= hpos <= 20:
-            away_diff.append(3)
-        else:
-            away_diff.append(2)
 
-        # determine difficulty of the home team by league table position
-        apos = teams.loc[teams.id == row.team_h, 'position'].item()
-        if apos <= 4:
-            home_diff.append(5)
-        elif 5 <= apos <= 8:
-            home_diff.append(4)
-        elif 9 <= apos <= 20:
-            home_diff.append(3)
-        else:
-            home_diff.append(2)
+    def opponent_difficulty(t_id):
+        # determine difficulty of the team by league table position
+        pos = teams.loc[teams.id == t_id, 'position'].item()
+        if pos <= 4:
+            return 5
+        if 5 <= pos <= 8:
+            return 4
+        if 9 <= pos <= 20:
+            return 3
+        return 2
 
-    fixtures['team_h_difficulty'] = away_diff
-    fixtures['team_a_difficulty'] = home_diff
-    fixtures['started'] = fix_started
+
+    fixtures.loc[fixtures["finished"] == "POSTPONED", 'kickoff_time'] = "None"
+    fixtures.loc[fixtures["finished"] == "POSTPONED", 'finished'] = False
+
+    fixtures['started'] = [get_start_time(team) for team in fixtures['kickoff_time']]
+    fixtures['team_h_difficulty'] = [opponent_difficulty(team) for team in fixtures['team_a']]
+    fixtures['team_a_difficulty'] = [opponent_difficulty(team) for team in fixtures['team_h']]
+
     fixtures['finished_provisional'] = fixtures['finished']
 
     return teams, fixtures, team_crest
@@ -139,7 +130,7 @@ def generate_data():
     # create teams dataframe
     teams = pd.json_normalize(r['teams'])
 
-    # add team colours to dataframe
+    # add team colours to dataframe LIVERPOOL: #b30011 CHAMPIONS: #c99b05
     team_colours = ['#e20814', '#91beea', '#ca0b17', '#b60501', '#004a9b',
                     '#021581', '#004b97', '#024593', '#282624', '#0c3e94',
                     '#13428d', '#b30011', '#b1d4fa', '#dc1116', '#0d0805',
@@ -181,36 +172,37 @@ def get_team_record(team_id, df2):
     record_df = record_df.reset_index()
     # record_df[['name_y','team_h_score', 'team_a_score', 'name_x']].head(11)
 
-    w = 0
-    d = 0
-    l = 0
-
-    gd = 0
-    gf = 0
+    w = d = l = gd = gf = 0
 
     for row in record_df.itertuples():
-        # print(row['name_y'],row['team_h_score'], row['team_a_score'], row['name_x'])
-        if row.team_h == team_id and (row.team_h_score > row.team_a_score):
-            w += 1
-            # print("home win")
-        elif row.team_h == team_id and (row.team_h_score == row.team_a_score):
-            d += 1
-            # print("home draw")
-        elif row.team_h == team_id and (row.team_h_score < row.team_a_score):
-            l += 1
-            # print("home loss")
+        if row.team_a_score is None or  row.team_h_score is None:
+            continue
+        # print(row.team_h,row.team_h_score, row.team_a_score, row.team_a)
+        if row.team_h == team_id:
+            if row.team_h_score > row.team_a_score:
+                w += 1
+                # print("home win")
+            elif row.team_h_score == row.team_a_score:
+                d += 1
+                # print("home draw")
+            elif row.team_h_score < row.team_a_score:
+                l += 1
+                # print("home loss")
 
-        if row.team_a == team_id and (row.team_a_score > row.team_h_score):
-            w += 1
-            # print("away win")
-        elif row.team_a == team_id and (row.team_a_score == row.team_h_score):
-            d += 1
-            # print("away draw")
-        elif row.team_a == team_id and (row.team_a_score < row.team_h_score):
-            l += 1
-            # print("away loss")
+        if row.team_a == team_id:
+            if row.team_a_score > row.team_h_score:
+                w += 1
+                # print("away win")
+            elif row.team_a_score == row.team_h_score:
+                d += 1
+                # print("away draw")
+            elif row.team_a_score < row.team_h_score:
+                l += 1
+                # print("away loss")
 
     for row in record_df.itertuples():
+        if row.team_a_score is None or  row.team_h_score is None:
+            continue
         # if team is at home, and the game has happened(==), add home goals and subtract away goals
         if row.team_h == team_id and (row.team_h_score == row.team_h_score):
             gd += row.team_h_score
@@ -240,11 +232,11 @@ def get_team_record(team_id, df2):
     left = int(len(remaining_df))
     max_theory = int(pts + 3*left)
 
-    # ply = int(w+d+l)
+    ply = int(w+d+l)
     # print(f"{team_name} Record: Played: {ply}, Won: {w}, Draw: {d}, Loss: {l},"
     #       f"Points: {pts}, Goal Difference: {gd}, Remaining: {left}")
 
-    return pts, max_theory, gd, gf
+    return pts, max_theory, gd, gf, ply
 
 def putfirst(df, i):
     "Moves the specified index 'i' in dataframe 'df' to the top of the dataframe"
@@ -328,7 +320,11 @@ def gen_additional_data(teams, df2):
     gd = []
     gf = []
     for team in teams.itertuples():
-        _points, max_pts, goal_difference, goals_for = get_team_record(team.id, df2)
+        points, max_pts, goal_difference, goals_for, _played = get_team_record(team.id, df2)
+
+        # Calculate points deductions for sorting purposes
+        points, max_pts = points_deductions(team.id, points, max_pts)
+
         max_points.append(max_pts)
         gd.append(int(goal_difference))
         gf.append(goals_for)
@@ -346,14 +342,20 @@ def gen_additional_data(teams, df2):
 
 
 def points_deductions(row, points, max_pts):
-    '''Calculate points deductions for the current team'''
-    # Calculate points deductions
-    if row == 356: # SHU 2pt deduction
+    '''Calculate points deductions for the current team.
+
+    Example:
+    if row == 356: # SHU: 2pt deduction for 24/25 ELC
         points -= 2
         max_pts -= 2
         return points, max_pts
-    else:
-        return points, max_pts
+    '''
+    # Calculate points deductions
+
+    if row == 0:
+        pass
+
+    return points, max_pts
 
 
 def set_title_and_labels(title_text, total_y, teams):
@@ -377,6 +379,30 @@ def set_title_and_labels(title_text, total_y, teams):
     plt.xticks(rotation=60, color='w')
 
     return y_labelsize
+
+
+def get_current_gameweek(fixtures):
+    """A function to calculate the current gameweek, for use in the title"""
+    # get all values where the fixture is finished, then get the most recent finished one
+    finished_fixtures = fixtures[fixtures.finished_provisional]
+    if not finished_fixtures.empty:
+        most_recent = fixtures[fixtures.finished_provisional].iloc[-1]
+    else:
+        return 'Start of Season'
+    # get the next fixture after the most recent finished fixture
+    try:
+        next_fix = fixtures.iloc[most_recent.name + 1]
+    except IndexError: # if season is over, there is no next fixture
+        return 'End of Season'
+
+    # if the next fixture is: in the same gameweek as the most recent, or has started, it is midweek
+    if (next_fix.event == most_recent.event) or (next_fix.started):
+        return f'Mid GW{int(next_fix.event)}'
+    # if the next fixture is in the next gameweek, the week is over
+    if next_fix.event > most_recent.event:
+        return f'End of GW{int(most_recent.event)}'
+    # if next fixture is in the past, error safely and return blank
+    return ""
 
 
 def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
@@ -458,12 +484,13 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     plt.figure(figsize=(starting_x, starting_y))
 
     # Fixture Difficulty Colours
-    colours = {2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272', 'TBC': '#a1a1a1'}
+    colours = {1: '#68c47d', 2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272', 'TBC': '#a1a1a1'}
 
     # loop for every team that needs a bar
     for row in teams.itertuples():
-        points, max_pts, goal_difference, _goals_for = get_team_record(row.id, df2)
+        points, max_pts, goal_difference, _goals_for, played = get_team_record(row.id, df2)
         goal_difference = f'GD {goal_difference}'
+        played = f'MP {played}'
 
         # Calculate points deductions
         points, max_pts = points_deductions(row.id, points, max_pts)
@@ -503,10 +530,6 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
                          ha='center', fontname='sans-serif', c="#757171",
                          weight='semibold', size='x-small')
 
-            # goal difference label
-            plt.text(x+w/2, perma_y-0.5, goal_difference,
-                     ha='center', fontname='sans-serif', c='white',
-                     weight='semibold', size='x-small')
 
             # increment counter by 3, as each fixture has a possible value of 3 points
             bot += 3
@@ -519,12 +542,63 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
             plt.bar(x+w/2, color=bar_a.get_facecolor(),
                     lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
 
+            # goal difference label
+            plt.text(x+w/2, points-1.0, goal_difference,
+                     ha='center', fontname='sans-serif', c='white',
+                     weight='semibold', size='x-small')
+
+             # matches played label
+            plt.text(x+w/2, points-0.5, played,
+                     ha='center', fontname='sans-serif', c='white',
+                     weight='semibold', size='x-small')
+
+        def add_comp_logo(comp_name):
+            # width
+            cxleft = x + w/12
+            cxright = x + w/1.09174
+            cxwid = cxright - cxleft
+
+            #height
+            cybot = points - 4.5 + (3/3.5)
+            cytop = points - 4.5 + (3/1.09)
+            cyheight = cytop - cybot
+
+            # load comp logo, plot logo and team coloured box behind for visibility
+            crb =  Image.open(f"Logos/COMPS/{comp_name}LOGO.png").convert('RGBA')
+            plt.imshow(crb, extent=[cxleft, cxright, cybot, cytop], aspect='auto', zorder=5)
+            plt.bar(cxleft+(cxwid/2), cyheight, bottom=cybot, width=cxwid,
+            color=row.colours, edgecolor=row.colours, lw=1, zorder=4)
+
+        # add a logo to teams with guaranteed european competition
+
+
     # axis is slightly shorter than the number of teams being plotted
     ax_width = len(teams.index) - 0.5
 
 
+    def add_key():
+        # add graph key, and calculations to place the key
+        key_im = Image.open('key.png')
+
+        # horizontal
+        kxwid = 3.6
+        kxright = int(plt.xlim()[1]) - 0.7
+        kxleft = kxright - kxwid
+
+        # vertical
+        kxheight = 14
+        kytop = int(plt.ylim()[1]) - 3.9
+        kybot = kytop - kxheight
+
+        # plot the image and surrounding box
+        plt.imshow(key_im, extent=[kxleft, kxright, kybot, kytop], aspect='auto', zorder=4)
+        plt.bar(kxleft+(kxwid/2), kxheight, bottom=kybot, width=kxwid,
+                color=colours[3], edgecolor="#808080", lw=2.5)
+
+    # add_key()
+
     # offset y axis if bottom would fall on a multiple of 5, for readability
-    if (theory_min - 3) % 5 == 0:
+    if (theory_min-3) % 5 == 0:
         theory_min -= 1
 
     # get the max and min points, then add padding to graph to improve readability
@@ -535,10 +609,16 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     if total_y < 32:
         total_y = 32
         theory_min = theory_max - 30
+    
+    if theory_min-3 < 0:
+        min_lim = 0
+    else:
+        min_lim = theory_min-3
+
 
     # change limits for improved readability, and set ticks between new limits
-    plt.ylim((theory_min-3), (theory_max + 2))
-    plt.yticks(np.arange((theory_min-2), (theory_max + 2), 1))
+    plt.ylim((min_lim), (theory_max + 2))
+    plt.yticks(np.arange((min_lim+1), (theory_max + 2), 1))
 
     # correct the plot size
     new_x = starting_x - (step_x * (default_x - len(teams.index)))
@@ -550,23 +630,21 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     main_offset = x_offset[len(teams.index)]
     plt.margins(x=main_offset, tight=None)
 
+    def add_suffix(n):
+        '''Convert an integer into its ordinal representation e.g: 1 -> 1st'''
+        n = int(n)
+        # if number is in the teens, suffix is 'th'
+        if 11 <= (n % 100) <= 13:
+            suffix = 'th'
+        else:
+            # get final digit of the number (22 -> 2), then select appropriate suffix
+            suffix = ['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]
+        return str(n) + suffix
+
     # format position numbers
     title_pos = [remove_from_top+1, len(teams_all.index) - remove_from_bottom]
     for i, x in enumerate(title_pos):
-        if x == 1:
-            title_pos[i] = '1st'
-        elif x == 2:
-            title_pos[i] = '2nd'
-        elif x == 3:
-            title_pos[i] = '3rd'
-        elif x == 21:
-            title_pos[i] = '21st'
-        elif x == 22:
-            title_pos[i] = '22nd'
-        elif x == 23:
-            title_pos[i] = '23rd'
-        else:
-            title_pos[i] = f'{title_pos[i]}th'
+        title_pos[i] = add_suffix(x)
 
     # set the title and axes labels
 
@@ -574,7 +652,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     cur_day = datetime.today().strftime('%d-%m-%y')
     title_text = (
         title_text_1 +
-        f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}   '
+        f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}, {get_current_gameweek(df2)}   '
         )
 
     y_labelsize = set_title_and_labels(title_text, total_y, teams)
@@ -600,7 +678,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
             return f"{self.position} {self.label} {self.colour}"
 
         def label_space(self):
-            """A function to calculate the positioning of a label on a competition bar"""
+            """A function to calculate the positioning of a label on a competition line"""
             # adjust text spacing to not overlap any data bars
             for x in teams.itertuples():
                 if x.max_points == self.pts_required:
@@ -617,11 +695,13 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
             if self.labelpos is not None:
                 lne = plt.axhline(y=self.pts_required, color=self.colour, linestyle=self.linestyle)
                 txt = plt.text(self.labelpos, self.label_offset, self.label,
-                        color=self.colour, ha='left', weight='semibold', size='medium', va='bottom')
+                        color=self.colour, ha='left', weight='semibold', size='medium', va='bottom', zorder=2)
                 self.text = txt
                 self.line = lne
             else:
                 pass
+
+    dash_width = 5
 
     # create a list of ThresholdLine objects, to iterate through.
     obj_lst = []
@@ -630,20 +710,43 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
         tvar = ThresholdLine(x[0], x[1], x[2])
         obj_lst.append(tvar)
 
-    # for each line, check if overlapping, and change positioning of label if they are
-    for index, line in enumerate(obj_lst):
-        # oldline is the previous line by index, but not if the index would be -1
-        oldline = obj_lst[index-1]
-        if index - 1 < 0:
-            pass
-        elif oldline.pts_required == line.pts_required:
-            # update the new line to be offset, and move the old label higher
-            line.linestyle = (5, (5,5))
-            oldline.label_offset += 0.8
-            oldline.text.set_position((oldline.labelpos, oldline.label_offset))
-            plt.draw()
+    # Group lines by pts_required
+    grouped = defaultdict(list)
+    for line in obj_lst:
+        grouped[line.pts_required].append(line)
+    print(grouped)
 
+    # Track the count of processed lines per pts_required
+    offset_counters = {key: 0 for key in grouped.keys()}
+
+    for line in obj_lst:
+        pts = line.pts_required
+        group_size = len(grouped[pts])
+        idx = offset_counters[pts]
+
+        if group_size > 1:
+            total_gap = dash_width * (group_size - 1)
+            dash_offset = (group_size - idx) * dash_width  # the offset is in the pattern, not the start point
+
+            # Reverse label offset: first label highest, last label lowest
+            line.label_offset += (group_size - 1 - idx) * 0.8
+
+            line.linestyle = (dash_offset, (dash_width, total_gap))
+            print(line.label, dash_offset, (dash_width, total_gap))
+        else:
+            # Single line default style
+            line.linestyle = (0, (dash_width, dash_width))
+
+        if line.text:
+            line.text.set_position((line.labelpos, line.label_offset))
+
+        offset_counters[pts] += 1
+
+    for line in obj_lst:
         line.generate_threshold_line()
+
+
+
 
     # Axis modifications
     axes = plt.gca() #Getting the current axis
@@ -668,7 +771,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
         im = OffsetImage(img, zoom=0.18)
         im.image.axes = ax
 
-        ab = AnnotationBbox(im, (coord, theory_min-3),  xybox=(0., -30.), frameon=False,
+        ab = AnnotationBbox(im, (coord, min_lim),  xybox=(0., -30.), frameon=False,
                             xycoords='data',  boxcoords="offset points", pad=0)
 
         ax.add_artist(ab)
@@ -681,7 +784,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
 
     # add an invisible ylabel on the right to make padding equal on both sides of graph
     ax2 = axes.twinx()
-    ax2.set_ylabel("Points and remaining fixures in chronological order",
+    ax2.set_ylabel("Pgl",
                    labelpad=15, size=y_labelsize, fontname='sans-serif',
                    weight='semibold', color='w', zorder=0)
     ax2.spines[['top', 'right', 'left', 'bottom']].set_visible(False)

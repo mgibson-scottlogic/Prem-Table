@@ -7,9 +7,10 @@ import table_gen
 TITLE_PL = 'EPL: The race for European Competitions   '
 FILE_PL = 'PL Europe Race'
 lines_pl = [
-    [4, "Above __ points guarantees UCL", '#00004b'],
-    [5, "Above __ points guarantees UEL", '#ff6900'],
-    [18,"Above __ points for safety", '#e21a23']
+    [4, "Above __ points for UCL", '#00004b'],
+    [5, "Above __ points for UEL", '#ff6900'],
+    # [6, "Above __ points for CON", '#00be14'],
+    [17,"Above __ points for safety", '#e21a23']
 ]
 # CONF: [6, "Above __ points guarantees CON", '#00be14'],
 # can only guarantee CONF some time after League Cup Final
@@ -17,7 +18,7 @@ lines_pl = [
 TITLE_ELC = 'Championship: The race for Promotion   '
 FILE_ELC = 'Championship Promotion Race'
 lines_elc = [
-    [2, "Above __ points guarantees automatic promotion", '#52d577'],
+    [2, "Above __ points guarantees promotion", '#52d577'],
     [6, "Above __ points guarantees playoffs", '#d6bf25'],
     [21,"Above __ points for safety", '#e21a23']
 ]
