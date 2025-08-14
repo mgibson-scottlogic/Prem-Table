@@ -804,7 +804,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     title_name = f'{file_text} {date_time}.png'
 
     if os.getenv("GITHUB_ACTIONS") == "true":
-        base_folder = os.path.join(os.getcwd(), "History_GH", competition)
+        base_folder = os.path.join(os.getcwd(), "HistoryGenerated", competition)
     else:
         base_folder = os.path.join(os.getcwd(), "History", competition)
 

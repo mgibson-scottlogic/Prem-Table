@@ -1,4 +1,4 @@
-name: Generate and Commit Table
+name: Generate Table
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
@@ -28,22 +28,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt  # or any other library your script needs
-
-      - name: Clean History_GH folder
-        run: rm -rf History_GH/*
+          pip install -r requirements.txt
 
       - name: Run image generator
         run: |
-          python generate_tables.py  # your script should save to e.g. output/image.png
+          python generate_tables.py
+
+      - name: Switch to image branch
+        run: |
+          git fetch origin images || true
+          git checkout images || git checkout -b images
 
       - name: Commit and push image
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-           git checkout -B images
-
-          git add History_GH/
-          git commit -m "Auto-generated image $(date -u +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
-          git push origin images --force
+          git add HistoryGenerated
+          git commit -m "Auto-generated image $(date -u +'%Y-%m-%d %H:%M:%S')" || echo "No changes"
+          git push origin images
