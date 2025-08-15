@@ -72,7 +72,6 @@ def generate_efl_data():
     for row in teams.itertuples():
         crest_id = f"https://raw.githubusercontent.com/MatthewG375/Prem-Table/refs/heads/main/Logos/ELC/{row.id}.png"
         crest_id = f"Logos/ELC/{row.id}.png"
-        print(row.id)
         loaded_crest = Image.open(crest_id)
         # loaded_crest = Image.open(requests.get(crest_id,
         #                                        stream=True,
@@ -130,10 +129,10 @@ def generate_data():
     # create teams dataframe
     teams = pd.json_normalize(r['teams'])
 
-    # add team colours to dataframe LIVERPOOL: #b30011 CHAMPIONS: #c99b05
-    team_colours = ['#e20814', '#91beea', '#ca0b17', '#b60501', '#004a9b',
-                    '#021581', '#004b97', '#024593', '#282624', '#0c3e94',
-                    '#13428d', '#b30011', '#b1d4fa', '#dc1116', '#0d0805',
+    # add team colours to dataframe CHAMPIONS: #c99b05
+    team_colours = ['#e20814', '#91beea', "#690039", '#ca0b17', '#b60501', 
+                    '#004a9b', '#021581', '#004b97', '#024593', '#282624', 
+                    "#ffdf1a", '#b30011', '#b1d4fa', '#dc1116', '#0d0805', 
                     '#f4031c', '#d20911', '#152055', '#7d2d3f', '#feb906']
     teams['colours'] = team_colours
 
@@ -489,8 +488,9 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     # loop for every team that needs a bar
     for row in teams.itertuples():
         points, max_pts, goal_difference, _goals_for, played = get_team_record(row.id, df2)
-        goal_difference = f'GD {goal_difference}'
-        played = f'MP {played}'
+        goal_difference = "" if points <= 0 else f"GD {goal_difference}"
+        played = "" if points <= 0 else f"MP {played}"
+
 
         # Calculate points deductions
         points, max_pts = points_deductions(row.id, points, max_pts)
@@ -543,12 +543,12 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
                     lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
 
             # goal difference label
-            plt.text(x+w/2, points-1.0, goal_difference,
+            plt.text(x+w/2, (points-0.85 if points <2 else points-1), goal_difference,
                      ha='center', fontname='sans-serif', c='white',
                      weight='semibold', size='x-small')
 
              # matches played label
-            plt.text(x+w/2, points-0.5, played,
+            plt.text(x+w/2, (points-0.35 if points <2 else points-0.5), played,
                      ha='center', fontname='sans-serif', c='white',
                      weight='semibold', size='x-small')
 
@@ -609,7 +609,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     if total_y < 32:
         total_y = 32
         theory_min = theory_max - 30
-    
+
     if theory_min-3 < 0:
         min_lim = 0
     else:
@@ -714,7 +714,6 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     grouped = defaultdict(list)
     for line in obj_lst:
         grouped[line.pts_required].append(line)
-    print(grouped)
 
     # Track the count of processed lines per pts_required
     offset_counters = {key: 0 for key in grouped.keys()}
@@ -732,7 +731,6 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
             line.label_offset += (group_size - 1 - idx) * 0.8
 
             line.linestyle = (dash_offset, (dash_width, total_gap))
-            print(line.label, dash_offset, (dash_width, total_gap))
         else:
             # Single line default style
             line.linestyle = (0, (dash_width, dash_width))
