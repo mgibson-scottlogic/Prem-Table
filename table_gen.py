@@ -618,7 +618,11 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
 
     # change limits for improved readability, and set ticks between new limits
     plt.ylim((min_lim), (theory_max + 2))
-    plt.yticks(np.arange((min_lim+1), (theory_max + 2), 1))
+
+    ticks = np.arange(min_lim + 1, theory_max + 2, 1)
+    labels = ["" if tick == 0 else str(tick) for tick in ticks]
+    plt.yticks(ticks, labels)
+
 
     # correct the plot size
     new_x = starting_x - (step_x * (default_x - len(teams.index)))
