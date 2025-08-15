@@ -55,12 +55,12 @@ def generate_efl_data():
     teams = teams.rename(columns={'team.tla': 'short_name'})
     teams.sort_values('team.name', inplace=True)
 
-    team_colours = ['#009ee0', '#e21a23', '#690039', '#035da9',
-                    '#009edc', '#8d8d8d', '#f8b100', '#ffdf1a',
-                    '#f28c00', '#e40f1b', '#00367a', '#00a650',
-                    '#fff500', '#143f2a', '#323c9c', '#0799d5',
-                    '#1a59a3', '#ee2227', '#4681cf', '#e1393e',
-                    '#e20025', '#030303', '#fff002', '#173675']
+    team_colours = ['#183b90', '#009ee0', '#e21a23', '#ec4040',
+                    '#009edc', '#8d8d8d', '#f18a01', '#3a64a3',
+                    '#0053a0', '#e40f1b', '#00367a', '#00a650',
+                    '#fff500', '#323c9c', '#0799d5', '#1a59a3',
+                    '#ee2227', '#4681cf', '#ee1338', '#e1393e', 
+                    '#030303', '#fff002', '#173675', '#007b4d']
     teams['colours'] = team_colours
     teams = teams.rename(columns={'team.id': 'id'})
 
