@@ -1,4 +1,4 @@
-"""Factory"""
+"""Factory function to load standings for a given league"""
 
 from . import premier_league
 from . import championship

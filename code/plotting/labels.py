@@ -1,3 +1,5 @@
+"""Title and axis label formatting"""
+
 from datetime import datetime
 from utils import utils
 from matplotlib.axes import Axes

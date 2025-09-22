@@ -1,3 +1,5 @@
+"""Competition threshold line to display on graph"""
+
 class ThresholdLine():
     """Class representing a horizontal competition threshhold line"""
     def __init__(self, position, label, colour, teams, teams_all):

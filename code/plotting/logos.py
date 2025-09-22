@@ -1,3 +1,5 @@
+"""Loads team/competition logos and the optional graph key"""
+
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from PIL import Image
 

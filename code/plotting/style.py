@@ -1,3 +1,5 @@
+"""Axis layout styling"""
+
 import matplotlib.ticker as plticker
 from matplotlib.ticker import AutoMinorLocator
 
