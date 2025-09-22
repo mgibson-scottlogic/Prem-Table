@@ -5,7 +5,7 @@ from . import championship
 
 # Add future loaders here
 LOADERS = {
-    "EPL": premier_league.load_fixture_data,
+    "PL": premier_league.load_fixture_data,
     "ELC": championship.load_fixture_data,
 }
 
@@ -17,6 +17,6 @@ def load_standings(league: str):
         ELC (English Football League Championship)
     """
     try:
-        return LOADERS[league]
+        return LOADERS[league]()
     except KeyError as exc:
         raise ValueError(f"Unknown league code: {league}. Available: {list(LOADERS.keys())}") from exc

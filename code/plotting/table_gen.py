@@ -4,63 +4,17 @@ from datetime import datetime
 from collections import defaultdict
 import os
 import time
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-import matplotlib.ticker as plticker
-from matplotlib.ticker import AutoMinorLocator
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from PIL import Image
 from data.loaders import load_standings
 from data.transformers import gen_additional_data, get_team_record, get_remaining_fixtures, points_deductions
+from .logos import replace_xticks_with_logos, add_comp_logo
+from .threshold import ThresholdLine
+from .labels import format_title_and_axes_labels
+from .style import style_axes
 
 pd.set_option('display.max_columns', None)
-
-def set_title_and_labels(title_text, total_y, teams):
-    '''Set the title and axis labels'''
-    # adjust label size when image gets smaller
-    x_labelsize = 17
-    y_labelsize = 17
-
-    if total_y < 40:
-        y_labelsize = 15
-
-    if len(teams.index) < 10:
-        x_labelsize = 15
-
-    plt.title(title_text, size=16, fontname='sans-serif', weight='semibold')
-
-    plt.xlabel("Teams in order of highest possible points total   ",
-            labelpad=15, size=x_labelsize, fontname='sans-serif', weight='semibold', loc='center')
-    plt.ylabel("Points and remaining fixures in chronological order",
-            labelpad=15, size=y_labelsize, fontname='sans-serif', weight='semibold')
-    plt.xticks(rotation=60, color='w')
-
-    return y_labelsize
-
-
-def get_current_gameweek(fixtures):
-    """A function to calculate the current gameweek, for use in the title"""
-    # get all values where the fixture is finished, then get the most recent finished one
-    finished_fixtures = fixtures[fixtures.finished_provisional]
-    if not finished_fixtures.empty:
-        most_recent = fixtures[fixtures.finished_provisional].iloc[-1]
-    else:
-        return 'Start of Season'
-    # get the next fixture after the most recent finished fixture
-    try:
-        next_fix = fixtures.iloc[most_recent.name + 1]
-    except IndexError: # if season is over, there is no next fixture
-        return 'End of Season'
-
-    # if the next fixture is: in the same gameweek as the most recent, or has started, it is midweek
-    if (next_fix.event == most_recent.event) or (next_fix.started):
-        return f'Mid GW{int(next_fix.event)}'
-    # if the next fixture is in the next gameweek, the week is over
-    if next_fix.event > most_recent.event:
-        return f'End of GW{int(most_recent.event)}'
-    # if next fixture is in the past, error safely and return blank
-    return ""
 
 
 def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
@@ -132,9 +86,9 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     barwidth = 0.7
     theory_min = 114
 
-    data_time = time.time()
+    fig, ax = plt.subplots(figsize=(starting_x, starting_y))
 
-    plt.figure(figsize=(starting_x, starting_y))
+    data_time = time.time()
 
     # Fixture Difficulty Colours
     colours = {1: '#68c47d', 2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272', 'TBC': '#a1a1a1'}
@@ -153,7 +107,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
         theory_min = min(theory_min, points)
 
         # create bar for current points, with team colour
-        cpts = plt.bar(row.short_name, points,
+        cpts = ax.bar(row.short_name, points,
                        color=row.colours, edgecolor=row.colours, width=barwidth)
         bot = points
 
@@ -162,7 +116,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
         for fx in fixtures_remaining.itertuples():
 
             dif_col = colours[fx.opposition_difficulty]
-            cur_bar = plt.bar(row.short_name, 3, bottom=bot,
+            cur_bar = ax.bar(row.short_name, 3, bottom=bot,
                               color=dif_col, edgecolor="#808080", lw=1.5, width=barwidth)
             perma_y = points
 
@@ -178,9 +132,9 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
 
                 # plot the team logo and the fixture date
                 imdis =  team_crest[fx.opposition_id].convert('LA')
-                plt.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
+                ax.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
 
-                plt.text(x+w/2, y+0.18, fx.remaining_fixtures,
+                ax.text(x+w/2, y+0.18, fx.remaining_fixtures,
                          ha='center', fontname='sans-serif', c="#757171",
                          weight='semibold', size='x-small')
 
@@ -193,63 +147,25 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
             x,y = bar_a.get_xy()
             w, h = bar_a.get_width(), bar_a.get_height()
             #print(x,y,w,h)
-            plt.bar(x+w/2, color=bar_a.get_facecolor(),
+            ax.bar(x+w/2, color=bar_a.get_facecolor(),
                     lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
 
             # goal difference label
-            plt.text(x+w/2, (points-0.85 if points <2 else points-1), goal_difference,
+            ax.text(x+w/2, (points-0.85 if points <2 else points-1), goal_difference,
                      ha='center', fontname='sans-serif', c='white',
                      weight='semibold', size='x-small')
 
              # matches played label
-            plt.text(x+w/2, (points-0.35 if points <2 else points-0.5), played,
+            ax.text(x+w/2, (points-0.35 if points <2 else points-0.5), played,
                      ha='center', fontname='sans-serif', c='white',
                      weight='semibold', size='x-small')
 
-        def add_comp_logo(comp_name):
-            # width
-            cxleft = x + w/12
-            cxright = x + w/1.09174
-            cxwid = cxright - cxleft
-
-            #height
-            cybot = points - 4.5 + (3/3.5)
-            cytop = points - 4.5 + (3/1.09)
-            cyheight = cytop - cybot
-
-            # load comp logo, plot logo and team coloured box behind for visibility
-            crb =  Image.open(f"Logos/COMPS/{comp_name}LOGO.png").convert('RGBA')
-            plt.imshow(crb, extent=[cxleft, cxright, cybot, cytop], aspect='auto', zorder=5)
-            plt.bar(cxleft+(cxwid/2), cyheight, bottom=cybot, width=cxwid,
-            color=row.colours, edgecolor=row.colours, lw=1, zorder=4)
-
-        # add a logo to teams with guaranteed european competition
-
+    # add_comp_logo(ax, comp_name, x, w, points, row.color)
 
     # axis is slightly shorter than the number of teams being plotted
     ax_width = len(teams.index) - 0.5
 
-
-    def add_key():
-        # add graph key, and calculations to place the key
-        key_im = Image.open('key.png')
-
-        # horizontal
-        kxwid = 3.6
-        kxright = int(plt.xlim()[1]) - 0.7
-        kxleft = kxright - kxwid
-
-        # vertical
-        kxheight = 14
-        kytop = int(plt.ylim()[1]) - 3.9
-        kybot = kytop - kxheight
-
-        # plot the image and surrounding box
-        plt.imshow(key_im, extent=[kxleft, kxright, kybot, kytop], aspect='auto', zorder=4)
-        plt.bar(kxleft+(kxwid/2), kxheight, bottom=kybot, width=kxwid,
-                color=colours[3], edgecolor="#808080", lw=2.5)
-
-    # add_key()
+    # add_key(ax, colours[3])
 
     # offset y axis if bottom would fall on a multiple of 5, for readability
     if (theory_min-3) % 5 == 0:
@@ -271,102 +187,36 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
 
 
     # change limits for improved readability, and set ticks between new limits
-    plt.ylim((min_lim), (theory_max + 2))
+    ax.set_ylim((min_lim), (theory_max + 2))
 
     ticks = np.arange(min_lim + 1, theory_max + 2, 1)
     labels = ["" if tick == 0 else str(tick) for tick in ticks]
-    plt.yticks(ticks, labels)
+    ax.set_yticks(ticks, labels)
 
 
     # correct the plot size
     new_x = starting_x - (step_x * (default_x - len(teams.index)))
     new_y = starting_y - (step_y * (default_y - total_y))
 
-    plt.gcf().set_size_inches(new_x, new_y)
+    fig.set_size_inches(new_x, new_y)
 
     # choose correct x offset from x_offset dict
     main_offset = x_offset[len(teams.index)]
-    plt.margins(x=main_offset, tight=None)
+    ax.margins(x=main_offset, tight=None)
 
-    def add_suffix(n):
-        '''Convert an integer into its ordinal representation e.g: 1 -> 1st'''
-        n = int(n)
-        # if number is in the teens, suffix is 'th'
-        if 11 <= (n % 100) <= 13:
-            suffix = 'th'
-        else:
-            # get final digit of the number (22 -> 2), then select appropriate suffix
-            suffix = ['th', 'st', 'nd', 'rd', 'th'][min(n % 10, 4)]
-        return str(n) + suffix
-
-    # format position numbers
-    title_pos = [remove_from_top+1, len(teams_all.index) - remove_from_bottom]
-    for i, x in enumerate(title_pos):
-        title_pos[i] = add_suffix(x)
-
-    # set the title and axes labels
-
-    # set axis lables and title
-    cur_day = datetime.today().strftime('%d-%m-%y')
-    title_text = (
-        title_text_1 +
-        f'\n{title_pos[0]} to {title_pos[1]} as of {cur_day}, {get_current_gameweek(df2)}   '
-        )
-
-    y_labelsize = set_title_and_labels(title_text, total_y, teams)
+    title_pos = [pos_one, pos_two]
+    y_labelsize = format_title_and_axes_labels(ax, title_text_1, title_pos, df2, teams, total_y)
 
     # reset teams index for use in generating label position
     teams = teams.reset_index()
     teams_all = teams_all.reset_index()
 
-    class ThresholdLine():
-        """Class representing a horizontal competition threshhold line"""
-        def __init__(self, position, label, colour):
-            self.position = position
-            self.pts_required = teams_all['max_points'][self.position]
-            self.label = label.replace('__', str(self.pts_required))
-            self.colour = colour
-            self.linestyle = (0, (5, 5))
-            self.label_space()
-            self.label_offset = self.pts_required + 0.12
-            self.text = None
-            self.line = None
-
-        def __str__(self):
-            return f"{self.position} {self.label} {self.colour}"
-
-        def label_space(self):
-            """A function to calculate the positioning of a label on a competition line"""
-            # adjust text spacing to not overlap any data bars
-            for x in teams.itertuples():
-                if x.max_points == self.pts_required:
-                    label_space = x.Index - 0.5
-                    break
-                label_space = None
-
-            self.labelpos = label_space
-
-        def generate_threshold_line(self):
-            """Function to generate the line and plot it on the figure"""
-            # only draw the line if there are bars that max out under the value
-            # e.g: if image shows pos 1 - 10, dont draw the relegation line, as there is no need
-            if self.labelpos is not None:
-                lne = plt.axhline(y=self.pts_required, color=self.colour, linestyle=self.linestyle)
-                txt = plt.text(self.labelpos, self.label_offset, self.label,
-                        color=self.colour, ha='left', weight='semibold', size='medium', va='bottom', zorder=2)
-                self.text = txt
-                self.line = lne
-            else:
-                pass
-
     dash_width = 5
 
-    # create a list of ThresholdLine objects, to iterate through.
-    obj_lst = []
-    for x in lines_to_generate:
-        # Position, Label, Hex Colour Code
-        tvar = ThresholdLine(x[0], x[1], x[2])
-        obj_lst.append(tvar)
+     # Position, Label, Hex Colour Code
+    obj_lst = [ThresholdLine(x[0], x[1], x[2], teams, teams_all) for x in lines_to_generate]
+    for line in obj_lst:
+        line.generate(ax)
 
     # Group lines by pts_required
     grouped = defaultdict(list)
@@ -399,60 +249,11 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
         offset_counters[pts] += 1
 
     for line in obj_lst:
-        line.generate_threshold_line()
+        line.generate(ax)
 
+    style_axes(ax, ax_width, y_labelsize)
 
-
-
-    # Axis modifications
-    axes = plt.gca() #Getting the current axis
-
-    # format ticks to show every multiple of 5, and add grid behind to increase readability
-    intervals = float(5)
-
-    loc = plticker.MultipleLocator(base=intervals)
-    axes.yaxis.set_major_locator(loc)
-
-    minor_locator = AutoMinorLocator(intervals)
-    axes.yaxis.set_minor_locator(minor_locator)
-
-    axes.tick_params(axis='y', which='both', length=4, width=1)
-    axes.tick_params(axis='x', which='both', pad=15)
-    axes.set_axisbelow(True)
-    axes.grid(which='major', axis='y', linestyle=(0, (4, 4)))
-
-    # replace tick labels with club crests
-    def offset_image(coord, name, ax):
-        img = team_crest[name]
-        im = OffsetImage(img, zoom=0.18)
-        im.image.axes = ax
-
-        ab = AnnotationBbox(im, (coord, min_lim),  xybox=(0., -30.), frameon=False,
-                            xycoords='data',  boxcoords="offset points", pad=0)
-
-        ax.add_artist(ab)
-
-    tick_replace = teams['id'].tolist()
-
-    for i, c in enumerate(tick_replace):
-        offset_image(i, c, axes)
-
-
-    # add an invisible ylabel on the right to make padding equal on both sides of graph
-    ax2 = axes.twinx()
-    ax2.set_ylabel("Pgl",
-                   labelpad=15, size=y_labelsize, fontname='sans-serif',
-                   weight='semibold', color='w', zorder=0)
-    ax2.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
-    ax2.tick_params(left = False, right = False , labelleft = False ,
-                    labelbottom = False, labelright = False, bottom = False)
-
-    axes.spines['top'].set_visible(False)
-    axes.spines['right'].set_visible(False)
-
-    axes.spines['bottom'].set_bounds(-1, ax_width)
-    axes.spines['bottom'].set_linewidth(2)
-    axes.spines['left'].set_linewidth(2)
+    replace_xticks_with_logos(ax, teams['id'].tolist(), team_crest, min_lim)
 
     graph_time = time.time()
 

@@ -24,4 +24,4 @@ lines_elc = [
 ]
 
 # table_gen.generate_table('ELC', lines_elc, TITLE_ELC, FILE_ELC, pos_one=1, pos_two=24)
-table_gen.generate_table('EPL', lines_pl, TITLE_PL, FILE_PL, pos_one=1, pos_two=20)
+table_gen.generate_table('PL', lines_pl, TITLE_PL, FILE_PL, pos_one=1, pos_two=20)
