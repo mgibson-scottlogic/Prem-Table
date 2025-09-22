@@ -1,8 +1,8 @@
 """Code that actually runs the table generation"""
 
 import sys
+from plotting import table_gen
 sys.dont_write_bytecode = True
-import table_gen
 
 TITLE_PL = 'EPL: The race for European Competitions   '
 FILE_PL = 'PL Europe Race'

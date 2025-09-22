@@ -819,3 +819,6 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
           f'\nTime to gen graph: {round(graph_time - data_time, 3)} sec.'
           f'\nTime to save: {round(time.time() - graph_time, 3)} sec.')
     # plt.show()
+
+if __name__ == "__main__":
+    print("Please run the code in main.py to generate a graph")
