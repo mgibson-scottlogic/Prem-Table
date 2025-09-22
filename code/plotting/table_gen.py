@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image
-from data import loaders
+from data.loaders import load_standings
 
 pd.set_option('display.max_columns', None)
 
@@ -279,12 +279,7 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     origin_time = time.time()
 
     # convert competition code into correct data load
-    if competition == 'PL':
-        teams, df2, team_crest = loaders.generate_data()
-    elif competition == 'ELC':
-        teams, df2, team_crest = loaders.generate_efl_data()
-    else:
-        raise ValueError('Only PL or ELC is allowed')
+    teams, df2, team_crest = load_standings(competition)
     teams, teams_all = gen_additional_data(teams, df2)
 
     # convert table position to usable numbers
