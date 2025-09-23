@@ -1,5 +1,7 @@
 """Transforms the loaded data with computed fields"""
 
+import numpy as np
+
 def get_team_record(team_id, df2):
     """Function to get teams record from their ID"""
     # team_name = teams.loc[teams.id == team_id, 'name'].values[0]
@@ -9,46 +11,24 @@ def get_team_record(team_id, df2):
     # record_df[['name_y','team_h_score', 'team_a_score', 'name_x']].head(11)
 
     w = d = l = gd = gf = 0
+    record_df = record_df.query("status != 'CANCELLED' and team_a_score.notnull() and team_h_score.notnull()")
 
     for row in record_df.itertuples():
-        if row.team_a_score is None or  row.team_h_score is None:
-            continue
-        # print(row.team_h,row.team_h_score, row.team_a_score, row.team_a)
-        if row.team_h == team_id:
-            if row.team_h_score > row.team_a_score:
-                w += 1
-                # print("home win")
-            elif row.team_h_score == row.team_a_score:
-                d += 1
-                # print("home draw")
-            elif row.team_h_score < row.team_a_score:
-                l += 1
-                # print("home loss")
+        score_for  = row.team_h_score if row.team_h == team_id else row.team_a_score
+        score_against = row.team_a_score if row.team_h == team_id else row.team_h_score
 
-        if row.team_a == team_id:
-            if row.team_a_score > row.team_h_score:
-                w += 1
-                # print("away win")
-            elif row.team_a_score == row.team_h_score:
-                d += 1
-                # print("away draw")
-            elif row.team_a_score < row.team_h_score:
-                l += 1
-                # print("away loss")
+        # W/D/L
+        if score_for > score_against:
+            w += 1
+        elif score_for == score_against:
+            d += 1
+        else:
+            l += 1
 
-    for row in record_df.itertuples():
-        if row.team_a_score is None or  row.team_h_score is None:
-            continue
-        # if team is at home, and the game has happened(==), add home goals and subtract away goals
-        if row.team_h == team_id and (row.team_h_score == row.team_h_score):
-            gd += row.team_h_score
-            gd -= row.team_a_score
-            gf += row.team_h_score
-        # if team is away, and the game has happened(==), subtract home goals and add away goals
-        elif row.team_a == team_id and (row.team_h_score == row.team_h_score):
-            gd -= row.team_h_score
-            gd += row.team_a_score
-            gf += row.team_a_score
+        # GD / GF
+        gd += score_for - score_against
+        gf += score_for
+
 
     gd = int(gd)
     if gd >= 0:
@@ -57,10 +37,10 @@ def get_team_record(team_id, df2):
         gd = str(gd)
 
     # fixture is in the future if it has not: Finished, Provisionally Finished, or Started
-    remaining_df = df2.loc[ ((~df2['finished']) & (~df2['finished_provisional']) &
-                             ( (df2['started'] == False) | (df2['started'].isnull()) )) &
-                            ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
-    remaining_df = remaining_df.reset_index()
+    remaining_df = df2.query(
+            "(status == 'CANCELLED' or status != 'FINISHED') "
+            "and (team_h == @team_id or team_a == @team_id)"
+        ).reset_index()
 
     pts = int((w*3)+(d))
 
@@ -77,67 +57,65 @@ def get_team_record(team_id, df2):
 
 def get_remaining_fixtures(team_id, df2):
     """Takes a team ID and returns a pandas dataframe of remaining fixtures."""
-    filtered_df = df2.loc[ ((~df2['finished']) & (~df2['finished_provisional']) &
-                            ( (df2['started'] == False) | (df2['started'].isnull()) )) &
-                           ((df2['team_h'] == team_id) | (df2['team_a'] == team_id)) ]
-    filtered_df = filtered_df.reset_index()
+
+    filtered_df = df2.query(
+        "(status == 'CANCELLED' or status != 'FINISHED') "
+        "and (team_h == @team_id or team_a == @team_id)"
+    ).reset_index()
+
     #filtered_df[['name_y','team_h_score', 'team_a_score', 'name_x']]
 
-    remaining_fix = []
-    fix_location = []
-    opposition = []
-    opp_name = []
-    diff = []
+    filtered_df['fixture_location'] = np.where(
+        filtered_df['team_h'] == team_id,
+        'H', 
+        'A')
 
-    for row in filtered_df.itertuples():
-        if row.team_h == team_id:
-            location = "H"
-            oppos = row.team_a
-            tname = row.name_x
-            try:
-                opp_diff = row.team_h_difficulty
-            except AttributeError:
-                opp_diff = 3
-        else:
-            location = "A"
-            oppos = row.team_h
-            tname = row.name_y
-            try:
-                opp_diff = row.team_a_difficulty
-            except AttributeError:
-                opp_diff = 3
+    filtered_df['opposition_id'] = np.where(
+        filtered_df['team_h'] == team_id,
+        filtered_df['team_a'],
+        filtered_df['team_h']
+    )
 
-        if (row.kickoff_time is None) or (row.kickoff_time == "None"):
-            newdate = "TBC"
-            opp_diff = "TBC"
-        else:
-            date = row.kickoff_time[5:10]
-            left, right = date.split('-')
-            newdate = f"{location} {right}-{left}"
-        # print(newdate)
-        remaining_fix.append(newdate)
-        fix_location.append(location)
-        opposition.append(oppos)
-        opp_name.append(tname)
-        diff.append(opp_diff)
+    filtered_df['opposition_name'] = np.where(
+        filtered_df['team_h'] == team_id,
+        filtered_df['name_x'],
+        filtered_df['name_y']
+    )
+
+    filtered_df['opposition_difficulty'] = np.where(
+        filtered_df['team_h'] == team_id,
+        filtered_df.get('team_h_difficulty', 3),
+        filtered_df.get('team_a_difficulty', 3)
+    )
+
+    filtered_df['remaining_fixtures'] = np.where(
+        filtered_df['status'] == 'CANCELLED',
+        'TBC',
+        np.where(
+            (filtered_df['kickoff_time'].isnull()) | (filtered_df['kickoff_time'] == 'None'),
+            'TBC',
+            filtered_df['fixture_location'] + ' ' + filtered_df['kickoff_time'].str[8:10] + '-' + filtered_df['kickoff_time'].str[5:7]
+        )
+    )
+
+    # cancelled
+    filtered_df['opposition_difficulty'] = np.where(
+        filtered_df['status'] == 'CANCELLED',
+        'CAN',
+        np.where((filtered_df['kickoff_time'].isnull()) | (filtered_df['kickoff_time'] == 'None'),
+                 'TBC',
+                 filtered_df['opposition_difficulty'])
+    )
 
     # print(remaining_fix)
-    filtered_df['remaining_fixtures'] = remaining_fix
-    filtered_df['fixture_location'] = fix_location
-    filtered_df['opposition_id'] = opposition
-    filtered_df['opposition_name'] = opp_name
-    filtered_df['opposition_difficulty'] = diff
 
     filtered_df = filtered_df[['remaining_fixtures', 'fixture_location',
                                'opposition_id', 'opposition_name', 'opposition_difficulty']]
 
-    for row in filtered_df.itertuples():
-        if row.remaining_fixtures == "TBC":
-            # Moves the specified index in dataframe to the top of the dataframe
-            filtered_df["new"] = range(1,len(filtered_df)+1)
-            filtered_df.loc[filtered_df.index==row.Index, 'new'] = 0
-            filtered_df.sort_values("new", inplace=True)
-            filtered_df.drop('new', axis=1)
+    # move TBC fixtures to the top of the frame (bottom fixture on generated bar)
+    filtered_df["new"] = (filtered_df["remaining_fixtures"] != "TBC").astype(int)
+    filtered_df.sort_values("new", inplace=True)
+    filtered_df = filtered_df.drop("new", axis=1)
 
     # testing for smaller image size, need to -10 to remaining as well
     # filtered_df.drop(filtered_df.tail(10).index, inplace=True)
