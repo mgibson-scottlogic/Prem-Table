@@ -91,7 +91,14 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
     data_time = time.time()
 
     # Fixture Difficulty Colours
-    colours = {1: '#68c47d', 2: '#b5f7c6', 3: '#e7e7e7', 4: '#f5a1b2', 5: '#f47272', 'TBC': '#a1a1a1'}
+    colours = {'1': '#68c47d',
+               '2': '#b5f7c6',
+               '3': '#e7e7e7',
+               '4': '#f5a1b2',
+               '5': '#f47272',
+               'TBC': '#a1a1a1',
+               'CAN': "#fdd663"
+               }
 
     # loop for every team that needs a bar
     for row in teams.itertuples():
