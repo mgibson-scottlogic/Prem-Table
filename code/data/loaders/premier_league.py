@@ -47,6 +47,12 @@ def load_fixture_data():
         right_on='id'
     )
 
+    df2['status'] = 'SCHEDULED'
+    df2.loc[df2['finished'], 'status'] = 'FINISHED'
+    df2.loc[
+        (df2['started']) & (~df2['finished']), 'status'
+    ] = 'IN_PLAY'
+
     # create dictionary of team crests
     team_crest = {}
     for row in teams.itertuples():
