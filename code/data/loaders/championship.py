@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 import requests
 import pandas as pd
 from dotenv import load_dotenv
@@ -15,8 +16,11 @@ def load_fixture_data():
     API used: https://www.football-data.org/
     """
 
-    load_dotenv("../utils")
+    env_path = Path(__file__).resolve().parent.parent.parent/"utils"/".env"
+    load_dotenv(env_path)
+
     football_data_api_key = os.getenv('FOOTBALL_DATA_KEY')
+
     pd.set_option('future.no_silent_downcasting', True)
 
     url = 'https://api.football-data.org/v4/'
@@ -30,17 +34,12 @@ def load_fixture_data():
                                         'awayTeam.id': 'team_a', 
                                         'score.fullTime.home': 'team_h_score', 
                                         'score.fullTime.away': 'team_a_score',
-                                        'status': 'finished',
                                         'matchday': 'event',
                                         'awayTeam.name': 'name_x',
                                         'homeTeam.name': 'name_y',
                                         'utcDate': 'kickoff_time'
                                         })
-    fixtures = fixtures.replace({'FINISHED': True,
-                                 'TIMED': False,
-                                 'IN_PLAY': False,
-                                 'PAUSED': False,
-                                 'SCHEDULED': False})
+    fixtures['finished'] = fixtures['status'] == 'FINISHED'
 
     teams = requests.get(url+'competitions/ELC/standings', headers=headers, timeout=10).json()
     teams = pd.json_normalize(teams['standings'], 'table')
@@ -83,11 +82,11 @@ def load_fixture_data():
     def opponent_difficulty(t_id):
         # determine difficulty of the team by league table position
         pos = teams.loc[teams.id == t_id, 'position'].item()
-        if pos <= 4:
+        if pos <= 2:
             return 5
-        if 5 <= pos <= 8:
+        if 3 <= pos <= 6:
             return 4
-        if 9 <= pos <= 20:
+        if 7 <= pos <= 20:
             return 3
         return 2
 
