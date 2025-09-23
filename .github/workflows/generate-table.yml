@@ -31,8 +31,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run image generator
+        env:
+          PYTHONPATH: ${{ github.workspace }}/code
         run: |
-          python generate_tables.py
+          python code/generate_tables.py
 
       - name: Switch to image branch
         run: |
