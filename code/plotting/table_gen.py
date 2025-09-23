@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from data.loaders import load_standings
 from data.transformers import gen_additional_data, get_team_record, get_remaining_fixtures, points_deductions
-from .logos import replace_xticks_with_logos, add_comp_logo
+from .logos import replace_xticks_with_logos
 from .threshold import ThresholdLine
 from .labels import format_title_and_axes_labels
 from .style import style_axes
