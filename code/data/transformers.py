@@ -1,6 +1,7 @@
 """Transforms the loaded data with computed fields"""
 
 import numpy as np
+import pandas as pd
 
 def get_team_record(team_id, df2):
     """Function to get teams record from their ID"""
@@ -88,15 +89,16 @@ def get_remaining_fixtures(team_id, df2):
         filtered_df.get('team_a_difficulty', 3)
     )
 
+    filtered_df['kickoff_time'] = pd.to_datetime(filtered_df['kickoff_time'], errors='coerce')
     filtered_df['location_date'] = np.where(
         filtered_df['status'] == 'CANCELLED',
-        'TBC',
-        np.where(
-            (filtered_df['kickoff_time'].isnull()) | (filtered_df['kickoff_time'] == 'None'),
             'TBC',
-            filtered_df['fixture_location'] + ' ' + filtered_df['kickoff_time'].str[8:10] + '-' + filtered_df['kickoff_time'].str[5:7]
+            np.where(
+                filtered_df['kickoff_time'].isna(),
+                'TBC',
+                filtered_df['fixture_location'] + ' ' + filtered_df['kickoff_time'].dt.strftime('%d-%m')
+            )
         )
-    )
 
     # cancelled
     filtered_df['opposition_difficulty'] = np.where(
@@ -109,11 +111,11 @@ def get_remaining_fixtures(team_id, df2):
 
     # print(remaining_fix)
 
-    filtered_df = filtered_df[['remaining_fixtures', 'fixture_location',
+    filtered_df = filtered_df[['location_date', 'fixture_location',
                                'opposition_id', 'opposition_name', 'opposition_difficulty']]
 
     # move TBC fixtures to the top of the frame (bottom fixture on generated bar)
-    filtered_df["new"] = (filtered_df["remaining_fixtures"] != "TBC").astype(int)
+    filtered_df["new"] = (filtered_df["location_date"] != "TBC").astype(int)
     filtered_df.sort_values("new", inplace=True)
     filtered_df = filtered_df.drop("new", axis=1)
 
