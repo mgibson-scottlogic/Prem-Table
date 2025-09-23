@@ -88,7 +88,7 @@ def get_remaining_fixtures(team_id, df2):
         filtered_df.get('team_a_difficulty', 3)
     )
 
-    filtered_df['remaining_fixtures'] = np.where(
+    filtered_df['location_date'] = np.where(
         filtered_df['status'] == 'CANCELLED',
         'TBC',
         np.where(
@@ -167,6 +167,7 @@ def points_deductions(row, points, max_pts):
         return points, max_pts
     '''
     # Calculate points deductions
+    # 2025/26: No current points deductions
 
     if row == 0:
         pass

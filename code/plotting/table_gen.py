@@ -101,71 +101,72 @@ def generate_table(competition: str, lines_to_generate: list, title_text_1: str,
                }
 
     # loop for every team that needs a bar
-    for row in teams.itertuples():
-        points, max_pts, goal_difference, _goals_for, played = get_team_record(row.id, df2)
+    for team in teams.itertuples():
+        points, max_pts, goal_difference, _goals_for, games_played = get_team_record(team.id, df2)
         goal_difference = "" if points <= 0 else f"GD {goal_difference}"
-        played = "" if points <= 0 else f"MP {played}"
-
+        games_played = "" if points <= 0 else f"MP {games_played}"
 
         # Calculate points deductions
-        points, max_pts = points_deductions(row.id, points, max_pts)
+        points, max_pts = points_deductions(team.id, points, max_pts)
 
         # update lowest theoretical points total if new teams is lower
         theory_min = min(theory_min, points)
 
         # create bar for current points, with team colour
-        cpts = ax.bar(row.short_name, points,
-                       color=row.colours, edgecolor=row.colours, width=barwidth)
-        bot = points
+        team_current_bar = ax.bar(team.short_name, points,
+                                  color=team.colours, edgecolor=team.colours,
+                                  width=barwidth
+                                  )
+        top_prev = points
 
         # loop for every remaining fixture for current team: row.id
-        fixtures_remaining = get_remaining_fixtures(row.id, df2)
-        for fx in fixtures_remaining.itertuples():
+        fixtures_remaining = get_remaining_fixtures(team.id, df2)
+        for fixture in fixtures_remaining.itertuples():
 
-            dif_col = colours[fx.opposition_difficulty]
-            cur_bar = ax.bar(row.short_name, 3, bottom=bot,
-                              color=dif_col, edgecolor="#808080", lw=1.5, width=barwidth)
-            perma_y = points
+            difficulty_colour = colours[fixture.opposition_difficulty]
+            current_fixture = ax.bar(team.short_name, 3, bottom=top_prev,
+                                     color=difficulty_colour, edgecolor="#808080",
+                                     lw=1.5, width=barwidth
+                                     )[0]
 
             # positioning of image and text in upcoming fixture bar
-            for bar_im in cur_bar:
-                x,y = bar_im.get_xy()
-                w, h = bar_im.get_width(), bar_im.get_height()
+            x,y = current_fixture.get_xy()
+            w, h = current_fixture.get_width(), current_fixture.get_height()
 
-                xleft = x + w/8.5
-                xright = x + w/1.121212
-                ybot = y + h/3.5
-                ytop = y + h/1.09
+            xleft = x + w/8.5
+            xright = x + w/1.121212
+            ybot = y + h/3.5
+            ytop = y + h/1.09
 
-                # plot the team logo and the fixture date
-                imdis =  team_crest[fx.opposition_id].convert('LA')
-                ax.imshow(imdis, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
+            # plot the team logo and the fixture date
+            opp_crest_grey =  team_crest[fixture.opposition_id].convert('LA')
+            ax.imshow(opp_crest_grey, extent=[xleft, xright, ybot, ytop], aspect='auto', zorder=2)
 
-                ax.text(x+w/2, y+0.18, fx.remaining_fixtures,
-                         ha='center', fontname='sans-serif', c="#757171",
-                         weight='semibold', size='x-small')
-
+            ax.text(x+w/2, y+0.18, fixture.location_date,
+                        ha='center', fontname='sans-serif', c="#757171",
+                        weight='semibold', size='x-small')
 
             # increment counter by 3, as each fixture has a possible value of 3 points
-            bot += 3
+            top_prev += 3
 
         # remove bottom box outline
-        for bar_a in cpts:
-            x,y = bar_a.get_xy()
-            w, h = bar_a.get_width(), bar_a.get_height()
-            #print(x,y,w,h)
-            ax.bar(x+w/2, color=bar_a.get_facecolor(),
-                    lw=1.5, height=h+0.01, edgecolor=row.colours, width=barwidth)
+        bar_a = team_current_bar[0]
+        x,y = bar_a.get_xy()
+        w, h = bar_a.get_width(), bar_a.get_height()
+        ax.bar(x+w/2, color=bar_a.get_facecolor(),
+                lw=1.5, height=h+0.01, edgecolor=team.colours, width=barwidth)
 
-            # goal difference label
-            ax.text(x+w/2, (points-0.85 if points <2 else points-1), goal_difference,
-                     ha='center', fontname='sans-serif', c='white',
-                     weight='semibold', size='x-small')
+        # goal difference label
+        gd_y = points-0.85 if points <2 else points-1
+        ax.text(x+w/2, gd_y, goal_difference,
+                ha='center', fontname='sans-serif', c='white',
+                weight='semibold', size='x-small')
 
-             # matches played label
-            ax.text(x+w/2, (points-0.35 if points <2 else points-0.5), played,
-                     ha='center', fontname='sans-serif', c='white',
-                     weight='semibold', size='x-small')
+        # matches played label
+        mp_y = points-0.35 if points <2 else points-0.5
+        ax.text(x+w/2, mp_y, games_played,
+                ha='center', fontname='sans-serif', c='white',
+                weight='semibold', size='x-small')
 
     # add_comp_logo(ax, comp_name, x, w, points, row.color)
 
