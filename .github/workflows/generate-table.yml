@@ -34,7 +34,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/code
         run: |
-          python code/generate_tables.py
+          python code/main.py
 
       - name: Switch to image branch
         run: |
