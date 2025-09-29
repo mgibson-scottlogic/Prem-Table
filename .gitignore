@@ -3,3 +3,4 @@ HistoryGenerated/
 .env
 .idea
 Test\ Programs/*
+__pycache__/
