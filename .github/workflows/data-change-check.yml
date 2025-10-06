@@ -1,0 +1,63 @@
+name: Daily Data Pre-check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  check_data:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.hash.outputs.new_hash }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore previous hash
+        id: restore
+        uses: actions/cache@v4
+        with:
+          path: .last_data_hash
+          key: data-hash
+
+      - name: Compute hash
+        id: hash
+        run: |
+          curl -s https://fantasy.premierleague.com/api/fixtures > data.json
+          new_hash=$(sha256sum data.json | cut -d' ' -f1)
+          echo "new_hash=$new_hash" >> $GITHUB_OUTPUT
+
+      - name: Check if changed
+        id: compare
+        run: |
+          echo "Checking if data has changed..."
+
+          if [ -f .last_data_hash ]; then
+            echo "Previous hash found: $(cat .last_data_hash)"
+          else
+            echo "No previous hash found."
+          fi
+
+          echo "Current hash: ${{ steps.hash.outputs.new_hash }}"
+
+          if [ -f .last_data_hash ] && [ "$(cat .last_data_hash)" = "${{ steps.hash.outputs.new_hash }}" ]; then
+            echo "Data is unchanged."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Data has changed."
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Save hash to cache
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .last_data_hash
+          key: data-hash
+
+  generate_table:
+    needs: check_data
+    if: ${{ needs.check_data.outputs.changed == 'true' }}
+    uses: ./.github/workflows/generate-table.yml
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
