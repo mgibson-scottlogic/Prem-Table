@@ -15,7 +15,7 @@ jobs:
 
       - name: Restore previous hash
         id: restore
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .last_data_hash
           key: data-hash
@@ -48,9 +48,13 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Save new hash file
+        if: steps.compare.outputs.changed == 'true'
+        run: echo "${{ steps.hash.outputs.new_hash }}" > .last_data_hash
+
       - name: Save hash to cache
         if: steps.compare.outputs.changed == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache/save@v4
         with:
           path: .last_data_hash
           key: data-hash
