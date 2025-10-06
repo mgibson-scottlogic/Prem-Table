@@ -2,8 +2,10 @@ name: Generate Table
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *" 
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 permissions:
   contents: write 
