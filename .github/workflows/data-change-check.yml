@@ -60,4 +60,4 @@ jobs:
     if: ${{ needs.check_data.outputs.changed == 'true' }}
     uses: ./.github/workflows/generate-table.yml
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
