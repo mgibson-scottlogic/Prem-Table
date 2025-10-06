@@ -9,7 +9,7 @@ jobs:
   check_data:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.hash.outputs.new_hash }}
+      changed: ${{ steps.compare.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
 
