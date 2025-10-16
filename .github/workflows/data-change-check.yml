@@ -21,7 +21,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .last_data_hash
-          key: data-hash
+          key: prem-data-hash
 
       - name: Compute hash
         id: hash
@@ -29,38 +29,41 @@ jobs:
           curl -s https://fantasy.premierleague.com/api/fixtures > data.json
           new_hash=$(sha256sum data.json | cut -d' ' -f1)
           echo "new_hash=$new_hash" >> $GITHUB_OUTPUT
+          echo "Current hash: $new_hash"
 
       - name: Check if changed
         id: compare
         run: |
           echo "Checking if data has changed..."
 
+          # Get previous hash
           if [ -f .last_data_hash ]; then
-            echo "Previous hash found: $(cat .last_data_hash)"
+            previous_hash=$(cat .last_data_hash)
+            echo "Previous hash found: $previous_hash"
           else
+            previous_hash=""
             echo "No previous hash found."
           fi
 
-          echo "Current hash: ${{ steps.hash.outputs.new_hash }}"
+          current_hash="${{ steps.hash.outputs.new_hash }}"
+          echo "Current hash: $current_hash"
 
-          if [ -f .last_data_hash ] && [ "$(cat .last_data_hash)" = "${{ steps.hash.outputs.new_hash }}" ]; then
+          if [ -n "$previous_hash" ] && [ "$previous_hash" = "$current_hash" ]; then
             echo "Data is unchanged."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Data has changed."
+            echo "Data has changed (or no previous hash exists)."
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Save new hash file
-        if: steps.compare.outputs.changed == 'true'
         run: echo "${{ steps.hash.outputs.new_hash }}" > .last_data_hash
 
       - name: Save hash to cache
-        if: steps.compare.outputs.changed == 'true'
         uses: actions/cache/save@v4
         with:
           path: .last_data_hash
-          key: data-hash
+          key: prem-data-hash
 
   generate_table:
     needs: check_data
