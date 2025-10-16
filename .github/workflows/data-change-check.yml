@@ -12,7 +12,7 @@ jobs:
   check_data:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.compare.outputs.changed }}
+      pl_changed: ${{ steps.compare.outputs.pl_changed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,16 +20,27 @@ jobs:
         id: restore
         uses: actions/cache/restore@v4
         with:
-          path: .last_data_hash
-          key: prem-data-hash
+          path: .last_pl_data_hash
+          key: pl-data-hash
 
-      - name: Compute hash
-        id: hash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
-          curl -s https://fantasy.premierleague.com/api/fixtures > data.json
-          new_hash=$(sha256sum data.json | cut -d' ' -f1)
-          echo "new_hash=$new_hash" >> $GITHUB_OUTPUT
-          echo "Current hash: $new_hash"
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run hash generator
+        id: pl_hash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/code
+        run: |
+          export new_pl_hash=$(python code/data/hash_api.py PL)
+          echo "Computed PL hash: $new_pl_hash"
+          echo "new_pl_hash=$new_pl_hash" >> $GITHUB_OUTPUT
 
       - name: Check if changed
         id: compare
@@ -37,37 +48,37 @@ jobs:
           echo "Checking if data has changed..."
 
           # Get previous hash
-          if [ -f .last_data_hash ]; then
-            previous_hash=$(cat .last_data_hash)
-            echo "Previous hash found: $previous_hash"
+          if [ -f .last_pl_data_hash ]; then
+            previous_pl_hash=$(cat .last_pl_data_hash)
+            echo "Previous PL hash found: $previous_pl_hash"
           else
-            previous_hash=""
-            echo "No previous hash found."
+            previous_pl_hash=""
+            echo "No previous PL hash found."
           fi
 
-          current_hash="${{ steps.hash.outputs.new_hash }}"
-          echo "Current hash: $current_hash"
+          current_pl_hash="${{ steps.pl_hash.outputs.new_pl_hash }}"
+          echo "Current PL hash: $current_pl_hash"
 
-          if [ -n "$previous_hash" ] && [ "$previous_hash" = "$current_hash" ]; then
-            echo "Data is unchanged."
-            echo "changed=false" >> $GITHUB_OUTPUT
+          if [ -n "$previous_pl_hash" ] && [ "$previous_pl_hash" = "$current_pl_hash" ]; then
+            echo "PL data is unchanged."
+            echo "pl_changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Data has changed (or no previous hash exists)."
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "PL data has changed (or no previous hash exists)."
+            echo "pl_changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Save new hash file
-        run: echo "${{ steps.hash.outputs.new_hash }}" > .last_data_hash
+        run: echo "${{ steps.pl_hash.outputs.new_pl_hash }}" > .last_pl_data_hash
 
       - name: Save hash to cache
         uses: actions/cache/save@v4
         with:
-          path: .last_data_hash
-          key: prem-data-hash
+          path: .last_pl_data_hash
+          key: pl-data-hash
 
   generate_table:
     needs: check_data
-    if: ${{ needs.check_data.outputs.changed == 'true' }}
+    if: ${{ needs.check_data.outputs.pl_changed == 'true' }}
     uses: ./.github/workflows/generate-table.yml
     secrets:
       MY_API_KEY: ${{ secrets.GITHUB_TOKEN }}
